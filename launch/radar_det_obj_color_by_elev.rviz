@@ -9,9 +9,10 @@ Panels:
         - /Grid1
         - /Grid1/Offset1
         - /PointCloud21
-        - /PointCloud21/Status1
         - /PointCloud21/Autocompute Value Bounds1
         - /Axes1
+        - /OccupancyGrid1
+        - /OccupancyGrid2
       Splitter Ratio: 0.5
     Tree Height: 577
   - Class: rviz/Selection
@@ -92,6 +93,30 @@ Visualization Manager:
       Radius: 0.05000000074505806
       Reference Frame: <Fixed Frame>
       Value: true
+    - Class: octomap_rviz_plugin/OccupancyGrid
+      Enabled: false
+      Max. Height Display: 3.4028234663852886e+38
+      Max. Octree Depth: 16
+      Min. Height Display: -3.4028234663852886e+38
+      Name: OccupancyGrid
+      Octomap Topic: /octomap_full
+      Queue Size: 5
+      Value: false
+      Voxel Alpha: 1
+      Voxel Coloring: Z-Axis
+      Voxel Rendering: Occupied Voxels
+    - Class: octomap_rviz_plugin/OccupancyGrid
+      Enabled: true
+      Max. Height Display: inf
+      Max. Octree Depth: 16
+      Min. Height Display: -inf
+      Name: OccupancyGrid
+      Octomap Topic: /octomap_binary
+      Queue Size: 5
+      Value: true
+      Voxel Alpha: 1
+      Voxel Coloring: Z-Axis
+      Voxel Rendering: Occupied Voxels
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -117,7 +142,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 5.925095558166504
+      Distance: 3.9834656715393066
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -132,10 +157,10 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.4597967267036438
+      Pitch: 1.3197954893112183
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 3.0381903648376465
+      Yaw: 3.05318546295166
     Saved: ~
 Window Geometry:
   Displays:
