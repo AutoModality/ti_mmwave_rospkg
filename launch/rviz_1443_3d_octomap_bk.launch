@@ -22,7 +22,33 @@
 	<node pkg="rosbag" type="record" name="rosbag_record_radar"
 		args="record -o /home/nvidia/testdata/radar -a"/> -->
 	
-	<include file="$(find octomap_server)/launch/octomap_mapping.launch" />
-	<!-- <include file="/home/wt70707/catkin_ws/src/visbox/packages/vision/octomap_radar/octomap_server/launch/octomap_mapping.launch" /> -->
+	<node pkg="octomap_server" type="octomap_server_node" name="octomap_server">
+
+	    <!-- resolution in meters per pixel -->
+	    <param name="resolution" value="0.1" />
+	
+	    <!-- name of the fixed frame, needs to be "/map" for SLAM -->
+	    <param name="frame_id" type="string" value="/map" />
+	
+	    <!-- Probabilities for hits and misses in the sensor model when dynamically building a map, default 0.7/0.4 -->
+	    <param name="sensor_model/hit" value="0.7" />
+	    <param name="sensor_model/miss" value="0.4" />
+	    
+	    <!-- Minimum and maximum probability for clamping when dynamically building a map, default 0.12/0.97 -->
+	    <param name="sensor_model/min" value="0.22" />
+	    <param name="sensor_model/max" value="1.0" />
+	
+	    <!-- max range / depth resolution of the kinect in meter, default: -1 (unlimited) -->
+	    <param name="sensor_model/max_range" value="4.0" />
+	    <param name="latch" value="false" />
+	    
+	    <!-- max/min height for occupancy map, should be in meters, default: -/+ infinity -->
+	    <param name="pointcloud_max_z" value="10" />
+	    <param name="pointcloud_min_z" value="-10" />
+
+	    <!-- topic from where pointcloud2 messages are subscribed -->
+	    <remap from="cloud_in" to="/mmWaveDataHdl/RScan" />
+
+	</node>
 
 </launch>
