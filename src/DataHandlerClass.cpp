@@ -298,30 +298,36 @@ void *DataUARTHandler::sortIncomingData( void )
             
             //get version (4 bytes)
             memcpy( &mmwData.header.version, &currentBufp->at(currentDatap), sizeof(mmwData.header.version));
+            //ROS_INFO_STREAM("Version: 0x" << std::hex << mmwData.header.version);
+            //ROS_INFO("mmWave device firmware detected version: 0x%8.8X", mmwData.header.version);
             currentDatap += ( sizeof(mmwData.header.version) );
             
             //get totalPacketLen (4 bytes)
             memcpy( &mmwData.header.totalPacketLen, &currentBufp->at(currentDatap), sizeof(mmwData.header.totalPacketLen));
+            //ROS_INFO_STREAM("Total pack length: " << mmwData.header.totalPacketLen);
             currentDatap += ( sizeof(mmwData.header.totalPacketLen) );
             
             //get platform (4 bytes)
             memcpy( &mmwData.header.platform, &currentBufp->at(currentDatap), sizeof(mmwData.header.platform));
+            //ROS_INFO_STREAM("Platform: 0x" << std::hex << mmwData.header.platform);
             currentDatap += ( sizeof(mmwData.header.platform) );      
             
             //if packet doesn't have correct header size (which is based on platform and SDK version), throw it away (does not include magicWord since it was already removed)
-	    if((((mmwData.header.version >> 24) & 0xFF) < 1) || (((mmwData.header.version >> 16) & 0xFF) < 1))  //check if SDK version is older than 1.1
-	    {
-               //ROS_INFO("mmWave device firmware detected version: 0x%8.8X", mmwData.header.version);
-	       headerSize = 28;
-	    }
-            else if((mmwData.header.platform & 0xFFFF) == 0x1443)
-	    {
-	       headerSize = 28;
-	    }
-	    else  // 1642
-	    {
-	       headerSize = 32;
-	    }
+			if((((mmwData.header.version >> 24) & 0xFF) < 1) || (((mmwData.header.version >> 16) & 0xFF) < 1))  //check if SDK version is older than 1.1
+			{
+				//ROS_INFO("mmWave device firmware detected version: 0x%8.8X", mmwData.header.version);
+				headerSize = 28;
+			}
+			else if((mmwData.header.platform & 0xFFFF) == 0x1443)
+			{
+			   headerSize = 28;
+			}
+			else  // 1642
+			{
+			   headerSize = 32;
+			}
+			//ROS_INFO_STREAM("currentBufp->size(): " << currentBufp->size() << ", " << "headerSize: " << headerSize);
+
             if(currentBufp->size() < headerSize)
             {
                sorterState = SWAP_BUFFERS;
@@ -330,26 +336,31 @@ void *DataUARTHandler::sortIncomingData( void )
             
             //get frameNumber (4 bytes)
             memcpy( &mmwData.header.frameNumber, &currentBufp->at(currentDatap), sizeof(mmwData.header.frameNumber));
+            //ROS_INFO_STREAM("Frame number: " << mmwData.header.frameNumber);
             currentDatap += ( sizeof(mmwData.header.frameNumber) );
             
             //get timeCpuCycles (4 bytes)
             memcpy( &mmwData.header.timeCpuCycles, &currentBufp->at(currentDatap), sizeof(mmwData.header.timeCpuCycles));
+            //ROS_INFO_STREAM("Time of CPU cycles: " << mmwData.header.timeCpuCycles);
             currentDatap += ( sizeof(mmwData.header.timeCpuCycles) );
             
             //get numDetectedObj (4 bytes)
             memcpy( &mmwData.header.numDetectedObj, &currentBufp->at(currentDatap), sizeof(mmwData.header.numDetectedObj));
+            //ROS_INFO_STREAM("Number of Detected objects: " << mmwData.header.numDetectedObj);
             currentDatap += ( sizeof(mmwData.header.numDetectedObj) );
             
             //get numTLVs (4 bytes)
             memcpy( &mmwData.header.numTLVs, &currentBufp->at(currentDatap), sizeof(mmwData.header.numTLVs));
+            //ROS_INFO_STREAM("Number of TLVs: " << mmwData.header.numTLVs);
             currentDatap += ( sizeof(mmwData.header.numTLVs) );
             
             //get subFrameNumber (4 bytes) (not used for XWR1443)
             if((mmwData.header.platform & 0xFFFF) != 0x1443)
-	    {
+            {
                memcpy( &mmwData.header.subFrameNumber, &currentBufp->at(currentDatap), sizeof(mmwData.header.subFrameNumber));
+               //ROS_INFO_STREAM("Number of sub frames: " << mmwData.header.subFrameNumber);
                currentDatap += ( sizeof(mmwData.header.subFrameNumber) );
-	    }
+            }
 
             //if packet lengths do not patch, throw it away
             if(mmwData.header.totalPacketLen == currentBufp->size() )
@@ -367,10 +378,12 @@ void *DataUARTHandler::sortIncomingData( void )
             
             //get number of objects
             memcpy( &mmwData.numObjOut, &currentBufp->at(currentDatap), sizeof(mmwData.numObjOut));
+            ROS_INFO_STREAM("Number of objects out: " << mmwData.numObjOut);
             currentDatap += ( sizeof(mmwData.numObjOut) );
             
             //get xyzQFormat
             memcpy( &mmwData.xyzQFormat, &currentBufp->at(currentDatap), sizeof(mmwData.xyzQFormat));
+            ROS_INFO_STREAM("xyz Q format: " << mmwData.xyzQFormat);
             currentDatap += ( sizeof(mmwData.xyzQFormat) );
             
             RScan->header.seq = 0;
@@ -409,26 +422,32 @@ void *DataUARTHandler::sortIncomingData( void )
             {
                 //get object range index
                 memcpy( &mmwData.objOut.rangeIdx, &currentBufp->at(currentDatap), sizeof(mmwData.objOut.rangeIdx));
+                ROS_INFO_STREAM("objOut randeIdx: " << mmwData.objOut.rangeIdx);
                 currentDatap += ( sizeof(mmwData.objOut.rangeIdx) );
                 
                 //get object doppler index
                 memcpy( &mmwData.objOut.dopplerIdx, &currentBufp->at(currentDatap), sizeof(mmwData.objOut.dopplerIdx));
+                ROS_INFO_STREAM("objOut dopplerIdx: " << mmwData.objOut.dopplerIdx);
                 currentDatap += ( sizeof(mmwData.objOut.dopplerIdx) );
                 
                 //get object peak intensity value
                 memcpy( &mmwData.objOut.peakVal, &currentBufp->at(currentDatap), sizeof(mmwData.objOut.peakVal));
+                ROS_INFO_STREAM("objOut peakVal: " << mmwData.objOut.peakVal);
                 currentDatap += ( sizeof(mmwData.objOut.peakVal) );
                 
                 //get object x-coordinate
                 memcpy( &mmwData.objOut.x, &currentBufp->at(currentDatap), sizeof(mmwData.objOut.x));
+                ROS_INFO_STREAM("objOut x: " << mmwData.objOut.x);
                 currentDatap += ( sizeof(mmwData.objOut.x) );
                 
                 //get object y-coordinate
                 memcpy( &mmwData.objOut.y, &currentBufp->at(currentDatap), sizeof(mmwData.objOut.y));
+                ROS_INFO_STREAM("objOut y: " << mmwData.objOut.y);
                 currentDatap += ( sizeof(mmwData.objOut.y) );
                 
                 //get object z-coordinate
                 memcpy( &mmwData.objOut.z, &currentBufp->at(currentDatap), sizeof(mmwData.objOut.z));
+                ROS_INFO_STREAM("objOut z: " << mmwData.objOut.z);
                 currentDatap += ( sizeof(mmwData.objOut.z) );
                 
                 //convert from Qformat to float(meters)

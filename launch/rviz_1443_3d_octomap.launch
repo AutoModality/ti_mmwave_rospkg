@@ -8,21 +8,31 @@
 	<include file="$(find ti_mmwave_rospkg)/launch/ti_mmwave_sensor.launch">
 		<arg name="device" value="1443" doc="TI mmWave sensor device type [1443, 1642]"/>
 	    <arg name="config" value="3d" doc="TI mmWave sensor device configuration [3d (not supported by 1642 EVM), 2d]"/>
-	    <arg name="max_allowed_elevation_angle_deg" value="10" doc="Maximum allowed elevation angle in degrees for detected object data [0 > value >= 90]}"/>
-	    <arg name="max_allowed_azimuth_angle_deg" value="60" doc="Maximum allowed azimuth angle in degrees for detected object data [0 > value >= 90]}"/>
+	    <arg name="max_allowed_elevation_angle_deg" value="30" doc="Maximum allowed elevation angle in degrees for detected object data [0 > value >= 90]}"/>
+	    <arg name="max_allowed_azimuth_angle_deg" value="90" doc="Maximum allowed azimuth angle in degrees for detected object data [0 > value >= 90]}"/>
 	</include>
 
 	<!-- Static transform from map to base_radar_link for visualization of stand-alone mmWave sensor using Rviz -->
 	<node pkg="tf" type="static_transform_publisher" name="static_tf_map_to_base_radar_link" args="0 0 0 0 0 0 map base_radar_link 100"/>
 
-	<!-- Launch Rviz with pre-defined configuration to view mmWave sensor detected object data (color by elevation) -->
-	<node pkg="rviz" type="rviz" name="rviz" args="-d $(find ti_mmwave_rospkg)/launch/radar_det_obj_color_by_elev.rviz"/> 
+	<!-- Launch Rviz with pre-defined configuration to view mmWave sensor detected object data (color by elevation)  -->
+	<node pkg="rviz" type="rviz" name="rviz" args="-d $(find ti_mmwave_rospkg)/launch/radar_det_obj_color_by_elev.rviz"/>
 
-	<!-- Record with bag file 
+	<!-- Record with bag file  -->
 	<node pkg="rosbag" type="record" name="rosbag_record_radar"
-		args="record -o /home/nvidia/testdata/radar -a"/> -->
+		args="record -o /home/nvidia/testdata/radar -a"/>-->
 	
-	<include file="$(find octomap_server)/launch/octomap_mapping.launch" />
+	<!-- <include file="$(find octomap_server)/launch/octomap_mapping.launch" /> -->
 	<!-- <include file="/home/wt70707/catkin_ws/src/visbox/packages/vision/octomap_radar/octomap_server/launch/octomap_mapping.launch" /> -->
+	<node pkg="tf2_ros" type="static_transform_publisher" name="scan_tf" args="0 0 0 0 0 0 body_FLU map" />
+	<node name="map_server" pkg="vb_mapper" type="map_server_node" output="screen" >
+    	<rosparam command="load" file="$(find vb_mapper)/launch/mapper.yaml" />    	
+		<param name="frame_id" type="string" value="map" />
+    	<param name="resolution" value="0.25"/>
+    	<param name="sensor_model/occupied_decay_percent" value="0.5"/> <!-- 19 will remove 1 meter stuff almost totally, 18 flash once, 17 no, 16/15/14 flash twice, 13/12 flash 5th,  11 flash 8th; this is the time voxell hold, should not be high -->
+    	<param name="sensor_model/hit" value="0.6"/>
+    	<param name="sensor_model/occupied" value="0.9"/>
+		<remap from="cloud_in" to="/mmWaveDataHdl/RScan" />
+  	</node>
 
 </launch>
