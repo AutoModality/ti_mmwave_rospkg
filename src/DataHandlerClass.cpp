@@ -56,90 +56,97 @@
 #include <pcl/point_types.h>
 #include <cmath>
 
+#define TIMEOUT_READ_CAN 100
 
-DataUARTHandler::DataUARTHandler(ros::NodeHandle* nh) : currentBufp(&pingPongBuffers[0]) , nextBufp(&pingPongBuffers[1]) 
+DataCANHandler::DataCANHandler(ros::NodeHandle* nh, std::string ifname, int mmwave_can_id) :
+	CanSocket(ifname, mmwave_can_id), currentBufp(&pingPongBuffers[0]), nextBufp(&pingPongBuffers[1])
 {
     nodeHandle = nh;
-    DataUARTHandler_pub = nodeHandle->advertise< sensor_msgs::PointCloud2 >("RScan", 100);
+    DataCANHandler_pub = nodeHandle->advertise< sensor_msgs::PointCloud2 >("RScan", 100);
     maxAllowedElevationAngleDeg = 90; // Use max angle if none specified
     maxAllowedAzimuthAngleDeg = 90; // Use max angle if none specified
 }
 
-/*Implementation of setUARTPort*/
-void DataUARTHandler::setUARTPort(char* mySerialPort)
-{
-    dataSerialPort = mySerialPort;
-}
-
-/*Implementation of setBaudRate*/
-void DataUARTHandler::setBaudRate(int myBaudRate)
-{
-    dataBaudRate = myBaudRate;
-}
-
 /*Implementation of setMaxAllowedElevationAngleDeg*/
-void DataUARTHandler::setMaxAllowedElevationAngleDeg(int myMaxAllowedElevationAngleDeg)
+void DataCANHandler::setMaxAllowedElevationAngleDeg(int myMaxAllowedElevationAngleDeg)
 {
     maxAllowedElevationAngleDeg = myMaxAllowedElevationAngleDeg;
 }
 
 /*Implementation of setMaxAllowedAzimuthAngleDeg*/
-void DataUARTHandler::setMaxAllowedAzimuthAngleDeg(int myMaxAllowedAzimuthAngleDeg)
+void DataCANHandler::setMaxAllowedAzimuthAngleDeg(int myMaxAllowedAzimuthAngleDeg)
 {
     maxAllowedAzimuthAngleDeg = myMaxAllowedAzimuthAngleDeg;
 }
 
 /*Implementation of readIncomingData*/
-void *DataUARTHandler::readIncomingData(void)
+void *DataCANHandler::readIncomingData(void)
 {
-    
     int firstPacketReady = 0;
     uint8_t last8Bytes[8] = {0};
+    struct canfd_frame frame;
     
-    /*Open UART Port and error checking*/
-    serial::Serial mySerialObject("", dataBaudRate, serial::Timeout::simpleTimeout(100));
-    mySerialObject.setPort(dataSerialPort);
-    try
-    {
-        mySerialObject.open();
-    } catch (std::exception &e1) {
-        ROS_INFO("DataUARTHandler Read Thread: Failed to open Data serial port with error: %s", e1.what());
-        ROS_INFO("DataUARTHandler Read Thread: Waiting 20 seconds before trying again...");
-        try
-        {
-            // Wait 20 seconds and try to open serial port again
-            ros::Duration(20).sleep();
-            mySerialObject.open();
-        } catch (std::exception &e2) {
-            ROS_ERROR("DataUARTHandler Read Thread: Failed second time to open Data serial port, error: %s", e1.what());
-            ROS_ERROR("DataUARTHandler Read Thread: Port could not be opened. Port is \"%s\" and baud rate is %d", dataSerialPort, dataBaudRate);
-            pthread_exit(NULL);
-        }
-    }
-    
-    if(mySerialObject.isOpen())
-        ROS_INFO("DataUARTHandler Read Thread: Port is open");
-    else
-        ROS_ERROR("DataUARTHandler Read Thread: Port could not be opened");
-    
-    /*Quick magicWord check to synchronize program with data Stream*/
-    while(!isMagicWord(last8Bytes))
-    {
+    /*Read CAN frame*/
+    if( readCAN(&frame) < 0 )
+	{
+		ROS_INFO("Failed to read CAN bus.");
 
-        last8Bytes[0] = last8Bytes[1];
-        last8Bytes[1] = last8Bytes[2];
-        last8Bytes[2] = last8Bytes[3];
-        last8Bytes[3] = last8Bytes[4];
-        last8Bytes[4] = last8Bytes[5];
-        last8Bytes[5] = last8Bytes[6];
-        last8Bytes[6] = last8Bytes[7];
-        mySerialObject.read(&last8Bytes[7], 1);
-        
+		return;
+	}
+    ROS_INFO("Read one frame from CAN bus.");
+	ROS_INFO_STREAM("CAN ID: 0x" << std::hex << frame.can_id);
+	ROS_INFO_STREAM("Data length: " << (int)frame.len);
+	ROS_INFO_STREAM("Flags: 0x" << std::hex << (int)frame.flags);
+	for (int i = 0; i < frame.len; i++)
+	{
+		ROS_INFO_STREAM("data[" << i << "]: 0x" << std::hex << (int)frame.data[i]);
+	}
+
+	// Check if it is a header frame
+	while(frame.can_id != 0xC1)
+	{
+		/*Read CAN frame*/
+		if( readCAN(&frame) < 0 )
+		{
+			ROS_INFO("Failed to read CAN bus.");
+
+			return;
+		}
+		ROS_INFO("Read one frame from CAN bus.");
+		ROS_INFO_STREAM("CAN ID: 0x" << std::hex << frame.can_id);
+		ROS_INFO_STREAM("Data length: " << (int)frame.len);
+		ROS_INFO_STREAM("Flags: 0x" << std::hex << (int)frame.flags);
+		for (int i = 0; i < frame.len; i++)
+		{
+			ROS_INFO_STREAM("data[" << i << "]: 0x" << std::hex << (int)frame.data[i]);
+		}
+	}
+    
+    /*Check if the first 8 bytes are magic numbers, if not something is wrong, not need for CAN bus*/
+	last8Bytes[0] = frame.data[0];
+	last8Bytes[1] = frame.data[1];
+	last8Bytes[2] = frame.data[2];
+	last8Bytes[3] = frame.data[3];
+	last8Bytes[4] = frame.data[4];
+	last8Bytes[5] = frame.data[5];
+	last8Bytes[6] = frame.data[6];
+	last8Bytes[7] = frame.data[7];
+    if(!isMagicWord(last8Bytes))
+    {
+    	ROS_INFO("Didn't find magic numbers, something wrong.")
+
+    	return;
     }
     
     /*Lock nextBufp before entering main loop*/
     pthread_mutex_lock(&nextBufp_mutex);
     
+    //push header onto buffer
+    for(int i = 8; i < 40; i++)
+    {
+    	nextBufp->push_back( frame.data[i] );  //push byte onto buffer
+    }
+
     while(ros::ok())
     {
         /*Start reading UART data and writing to buffer while also checking for magicWord*/
@@ -154,7 +161,7 @@ void *DataUARTHandler::readIncomingData(void)
         
         nextBufp->push_back( last8Bytes[7] );  //push byte onto buffer
         
-        //ROS_INFO("DataUARTHandler Read Thread: last8bytes = %02x%02x %02x%02x %02x%02x %02x%02x",  last8Bytes[7], last8Bytes[6], last8Bytes[5], last8Bytes[4], last8Bytes[3], last8Bytes[2], last8Bytes[1], last8Bytes[0]);
+        //ROS_INFO("DataCANHandler Read Thread: last8bytes = %02x%02x %02x%02x %02x%02x %02x%02x",  last8Bytes[7], last8Bytes[6], last8Bytes[5], last8Bytes[4], last8Bytes[3], last8Bytes[2], last8Bytes[1], last8Bytes[0]);
         
         /*If a magicWord is found wait for sorting to finish and switch buffers*/
         if( isMagicWord(last8Bytes) )
@@ -202,7 +209,7 @@ void *DataUARTHandler::readIncomingData(void)
 }
 
 
-int DataUARTHandler::isMagicWord(uint8_t last8Bytes[8])
+int DataCANHandler::isMagicWord(uint8_t last8Bytes[8])
 {
     int val = 0, i = 0, j = 0;
     
@@ -224,7 +231,7 @@ int DataUARTHandler::isMagicWord(uint8_t last8Bytes[8])
     return val;  
 }
 
-void *DataUARTHandler::syncedBufferSwap(void)
+void *DataCANHandler::syncedBufferSwap(void)
 {
     while(ros::ok())
     {
@@ -261,7 +268,7 @@ void *DataUARTHandler::syncedBufferSwap(void)
     
 }
 
-void *DataUARTHandler::sortIncomingData( void )
+void *DataCANHandler::sortIncomingData( void )
 {
     MmwDemo_Output_TLV_Types tlvType = MMWDEMO_OUTPUT_MSG_NULL;
     uint32_t tlvLen = 0;
@@ -484,9 +491,9 @@ void *DataUARTHandler::sortIncomingData( void )
             RScan->points.resize(RScan->width * RScan->height);
             
             //ROS_INFO("mmwData.numObjOut after = %d", mmwData.numObjOut);
-            //ROS_INFO("DataUARTHandler Sort Thread: number of obj = %d", mmwData.numObjOut );
+            //ROS_INFO("DataCANHandler Sort Thread: number of obj = %d", mmwData.numObjOut );
             
-            DataUARTHandler_pub.publish(RScan);
+            DataCANHandler_pub.publish(RScan);
             
             sorterState = CHECK_TLV_TYPE;
             
@@ -499,7 +506,7 @@ void *DataUARTHandler::sortIncomingData( void )
             
               while (i++ < tlvLen - 1)
               {
-                     //ROS_INFO("DataUARTHandler Sort Thread : Parsing Range Profile i=%d and tlvLen = %u", i, tlvLen);
+                     //ROS_INFO("DataCANHandler Sort Thread : Parsing Range Profile i=%d and tlvLen = %u", i, tlvLen);
               }
             
               currentDatap += tlvLen;
@@ -516,7 +523,7 @@ void *DataUARTHandler::sortIncomingData( void )
             
               while (i++ < tlvLen - 1)
               {
-                     //ROS_INFO("DataUARTHandler Sort Thread : Parsing Noise Profile i=%d and tlvLen = %u", i, tlvLen);
+                     //ROS_INFO("DataCANHandler Sort Thread : Parsing Noise Profile i=%d and tlvLen = %u", i, tlvLen);
               }
             
               currentDatap += tlvLen;
@@ -533,7 +540,7 @@ void *DataUARTHandler::sortIncomingData( void )
             
               while (i++ < tlvLen - 1)
               {
-                     //ROS_INFO("DataUARTHandler Sort Thread : Parsing Azimuth Profile i=%d and tlvLen = %u", i, tlvLen);
+                     //ROS_INFO("DataCANHandler Sort Thread : Parsing Azimuth Profile i=%d and tlvLen = %u", i, tlvLen);
               }
             
               currentDatap += tlvLen;
@@ -550,7 +557,7 @@ void *DataUARTHandler::sortIncomingData( void )
             
               while (i++ < tlvLen - 1)
               {
-                     //ROS_INFO("DataUARTHandler Sort Thread : Parsing Doppler Profile i=%d and tlvLen = %u", i, tlvLen);
+                     //ROS_INFO("DataCANHandler Sort Thread : Parsing Doppler Profile i=%d and tlvLen = %u", i, tlvLen);
               }
             
               currentDatap += tlvLen;
@@ -567,7 +574,7 @@ void *DataUARTHandler::sortIncomingData( void )
             
               while (i++ < tlvLen - 1)
               {
-                     //ROS_INFO("DataUARTHandler Sort Thread : Parsing Stats Profile i=%d and tlvLen = %u", i, tlvLen);
+                     //ROS_INFO("DataCANHandler Sort Thread : Parsing Stats Profile i=%d and tlvLen = %u", i, tlvLen);
               }
             
               currentDatap += tlvLen;
@@ -579,11 +586,11 @@ void *DataUARTHandler::sortIncomingData( void )
         
         case CHECK_TLV_TYPE:
         
-            //ROS_INFO("DataUARTHandler Sort Thread : tlvCount = %d, numTLV = %d", tlvCount, mmwData.header.numTLVs);
+            //ROS_INFO("DataCANHandler Sort Thread : tlvCount = %d, numTLV = %d", tlvCount, mmwData.header.numTLVs);
         
             if(tlvCount++ >= mmwData.header.numTLVs)
             {
-                //ROS_INFO("DataUARTHandler Sort Thread : CHECK_TLV_TYPE state says tlvCount max was reached, going to switch buffer state");
+                //ROS_INFO("DataCANHandler Sort Thread : CHECK_TLV_TYPE state says tlvCount max was reached, going to switch buffer state");
                 sorterState = SWAP_BUFFERS;
             }
             else
@@ -592,15 +599,15 @@ void *DataUARTHandler::sortIncomingData( void )
                 memcpy( &tlvType, &currentBufp->at(currentDatap), sizeof(tlvType));
                 currentDatap += ( sizeof(tlvType) );
                 
-                //ROS_INFO("DataUARTHandler Sort Thread : sizeof(tlvType) = %d", sizeof(tlvType));
+                //ROS_INFO("DataCANHandler Sort Thread : sizeof(tlvType) = %d", sizeof(tlvType));
             
                 //get tlvLen (32 bits) & remove from queue
                 memcpy( &tlvLen, &currentBufp->at(currentDatap), sizeof(tlvLen));
                 currentDatap += ( sizeof(tlvLen) );
                 
-                //ROS_INFO("DataUARTHandler Sort Thread : sizeof(tlvLen) = %d", sizeof(tlvLen));
+                //ROS_INFO("DataCANHandler Sort Thread : sizeof(tlvLen) = %d", sizeof(tlvLen));
                 
-                //ROS_INFO("DataUARTHandler Sort Thread : tlvType = %d, tlvLen = %d", (int) tlvType, tlvLen);
+                //ROS_INFO("DataCANHandler Sort Thread : tlvType = %d, tlvLen = %d", (int) tlvType, tlvLen);
             
                 switch(tlvType)
                 {
@@ -609,37 +616,37 @@ void *DataUARTHandler::sortIncomingData( void )
                     break;
                 
                 case MMWDEMO_OUTPUT_MSG_DETECTED_POINTS:
-                    //ROS_INFO("DataUARTHandler Sort Thread : Object TLV");
+                    //ROS_INFO("DataCANHandler Sort Thread : Object TLV");
                     sorterState = READ_OBJ_STRUCT;
                     break;
                 
                 case MMWDEMO_OUTPUT_MSG_RANGE_PROFILE:
-                    //ROS_INFO("DataUARTHandler Sort Thread : Range TLV");
+                    //ROS_INFO("DataCANHandler Sort Thread : Range TLV");
                     sorterState = READ_LOG_MAG_RANGE;
                     break;
                 
                 case MMWDEMO_OUTPUT_MSG_NOISE_PROFILE:
-                    //ROS_INFO("DataUARTHandler Sort Thread : Noise TLV");
+                    //ROS_INFO("DataCANHandler Sort Thread : Noise TLV");
                     sorterState = READ_NOISE;
                     break;
                 
                 case MMWDEMO_OUTPUT_MSG_AZIMUTH_STATIC_HEAT_MAP:
-                    //ROS_INFO("DataUARTHandler Sort Thread : Azimuth Heat TLV");
+                    //ROS_INFO("DataCANHandler Sort Thread : Azimuth Heat TLV");
                     sorterState = READ_AZIMUTH;
                     break;
                 
                 case MMWDEMO_OUTPUT_MSG_RANGE_DOPPLER_HEAT_MAP:
-                    //ROS_INFO("DataUARTHandler Sort Thread : R/D Heat TLV");
+                    //ROS_INFO("DataCANHandler Sort Thread : R/D Heat TLV");
                     sorterState = READ_DOPPLER;
                     break;
                 
                 case MMWDEMO_OUTPUT_MSG_STATS:
-                    //ROS_INFO("DataUARTHandler Sort Thread : Stats TLV");
+                    //ROS_INFO("DataCANHandler Sort Thread : Stats TLV");
                     sorterState = READ_STATS;
                     break;
                 
                 case MMWDEMO_OUTPUT_MSG_MAX:
-                    //ROS_INFO("DataUARTHandler Sort Thread : Header TLV");
+                    //ROS_INFO("DataCANHandler Sort Thread : Header TLV");
                     sorterState = READ_HEADER;
                     break;
                 
@@ -682,7 +689,7 @@ void *DataUARTHandler::sortIncomingData( void )
     pthread_exit(NULL);
 }
 
-void DataUARTHandler::start(void)
+void DataCANHandler::start(void)
 {
     
     pthread_t uartThread, sorterThread, swapThread;
@@ -723,11 +730,11 @@ void DataUARTHandler::start(void)
     ros::spin();
 
     pthread_join(iret1, NULL);
-    ROS_INFO("DataUARTHandler Read Thread joined");
+    ROS_INFO("DataCANHandler Read Thread joined");
     pthread_join(iret2, NULL);
-    ROS_INFO("DataUARTHandler Sort Thread joined");
+    ROS_INFO("DataCANHandler Sort Thread joined");
     pthread_join(iret3, NULL);
-    ROS_INFO("DataUARTHandler Swap Thread joined");
+    ROS_INFO("DataCANHandler Swap Thread joined");
     
     pthread_mutex_destroy(&countSync_mutex);
     pthread_mutex_destroy(&nextBufp_mutex);
@@ -739,17 +746,17 @@ void DataUARTHandler::start(void)
     
 }
 
-void* DataUARTHandler::readIncomingData_helper(void *context)
+void* DataCANHandler::readIncomingData_helper(void *context)
 {  
-    return (static_cast<DataUARTHandler*>(context)->readIncomingData());
+    return (static_cast<DataCANHandler*>(context)->readIncomingData());
 }
 
-void* DataUARTHandler::sortIncomingData_helper(void *context)
+void* DataCANHandler::sortIncomingData_helper(void *context)
 {  
-    return (static_cast<DataUARTHandler*>(context)->sortIncomingData());
+    return (static_cast<DataCANHandler*>(context)->sortIncomingData());
 }
 
-void* DataUARTHandler::syncedBufferSwap_helper(void *context)
+void* DataCANHandler::syncedBufferSwap_helper(void *context)
 {  
-    return (static_cast<DataUARTHandler*>(context)->syncedBufferSwap());
+    return (static_cast<DataCANHandler*>(context)->syncedBufferSwap());
 }

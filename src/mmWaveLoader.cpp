@@ -56,7 +56,8 @@ int main(int argc, char **argv)
   
   nodelet::V_string nargv;
   
-  manager.load("mmWaveCommSrv", "ti_mmwave_rospkg/mmWaveCommSrv", remap, nargv);
+  //TODO: this is another UART channel to configure the mmWave; before figure out how to do it through CAN bus, disable it
+  //manager.load("mmWaveCommSrv", "ti_mmwave_rospkg/mmWaveCommSrv", remap, nargv);
   
   manager.load("mmWaveDataHdl", "ti_mmwave_rospkg/mmWaveDataHdl", remap, nargv);
   

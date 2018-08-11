@@ -1,7 +1,7 @@
 /*
  * DataHandlerClass.cpp
  * 
- * This file defines the DataUARTHandler class.
+ * This file defines the DataCANHandler class.
  * 
  *
  * Copyright (C) 2017 Texas Instruments Incorporated - http://www.ti.com/ 
@@ -50,20 +50,16 @@
 #include "sensor_msgs/PointCloud2.h"
 #define COUNT_SYNC_MAX 2
 
-class DataUARTHandler{
-    
+#include <vb_util_lib/cansocket.h>
+
+class DataCANHandler : public CanSocket
+{
 public:
     
     /*Constructor*/
-   //void DataUARTHandler(ros::NodeHandle* nh) : currentBufp(&pingPongBuffers[0]) , nextBufp(&pingPongBuffers[1]) {}
-    DataUARTHandler(ros::NodeHandle* nh);
+   //void DataCANHandler(ros::NodeHandle* nh) : currentBufp(&pingPongBuffers[0]) , nextBufp(&pingPongBuffers[1]) {}
+    DataCANHandler(ros::NodeHandle* nh, std::string ifname, int mmwave_can_id);
     
-    /*User callable function to set the UARTPort*/
-    void setUARTPort(char* mySerialPort);
-    
-    /*User callable function to set the BaudRate*/
-    void setBaudRate(int myBaudRate);
-
     /*User callable function to set maxAllowedElevationAngleDeg*/
     void setMaxAllowedElevationAngleDeg(int myMaxAllowedElevationAngleDeg);
     
@@ -86,12 +82,6 @@ public:
     mmwDataPacket mmwData;
 
 private:
-    
-    /*Contains the name of the serial port*/
-    char* dataSerialPort;
-    
-    /*Contains the baud Rate*/
-    int dataBaudRate;
     
     /*Contains the max_allowed_elevation_angle_deg (points with elevation angles 
       outside +/- max_allowed_elevation_angle_deg will be removed)*/
@@ -145,7 +135,7 @@ private:
     
     ros::NodeHandle* nodeHandle;
     
-    ros::Publisher DataUARTHandler_pub;
+    ros::Publisher DataCANHandler_pub;
     
 };
 

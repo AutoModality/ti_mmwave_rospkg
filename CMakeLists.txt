@@ -15,6 +15,7 @@ find_package(catkin REQUIRED COMPONENTS
   sensor_msgs
   message_generation
   pluginlib
+  vb_util_lib
 )
 
 find_package(Boost REQUIRED )
@@ -113,7 +114,7 @@ find_package(PCL 1.7.2 REQUIRED)
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
   INCLUDE_DIRS include
-  LIBRARIES mmwave
+  LIBRARIES mmwave vb_util_lib
   #CATKIN_DEPENDS nodelet roscpp serial std_msgs
   DEPENDS system_lib
 )
