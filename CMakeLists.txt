@@ -15,7 +15,6 @@ find_package(catkin REQUIRED COMPONENTS
   sensor_msgs
   message_generation
   pluginlib
-  vb_util_lib
 )
 
 find_package(Boost REQUIRED )
@@ -142,6 +141,7 @@ add_definitions(${PCL_DEFINITIONS})
 
 ## Declare a C++ library
  add_library(mmwave
+   src/cansocket.cpp
    src/mmWaveDataHdl.cpp
    src/mmWaveCommSrv.cpp
    src/DataHandlerClass.cpp

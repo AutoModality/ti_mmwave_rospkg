@@ -85,13 +85,19 @@ void *DataCANHandler::readIncomingData(void)
     int firstPacketReady = 0;
     uint8_t last8Bytes[8] = {0};
     struct canfd_frame frame;
+    MmwDemo_Output_TLV_Types tlvType = MMWDEMO_OUTPUT_MSG_NULL;
+    uint32_t tlvLen = 0;
+    int msg_tl_points = 1;
+    int msg_tl_range = 1;
+    int msg_tl_noise = 1;
+    int msg_tl_stats = 1;
     
     /*Read CAN frame*/
     if( readCAN(&frame) < 0 )
 	{
 		ROS_INFO("Failed to read CAN bus.");
 
-		return;
+		return NULL;
 	}
     ROS_INFO("Read one frame from CAN bus.");
 	ROS_INFO_STREAM("CAN ID: 0x" << std::hex << frame.can_id);
@@ -110,7 +116,7 @@ void *DataCANHandler::readIncomingData(void)
 		{
 			ROS_INFO("Failed to read CAN bus.");
 
-			return;
+			return NULL;
 		}
 		ROS_INFO("Read one frame from CAN bus.");
 		ROS_INFO_STREAM("CAN ID: 0x" << std::hex << frame.can_id);
@@ -133,9 +139,9 @@ void *DataCANHandler::readIncomingData(void)
 	last8Bytes[7] = frame.data[7];
     if(!isMagicWord(last8Bytes))
     {
-    	ROS_INFO("Didn't find magic numbers, something wrong.")
+    	ROS_INFO("Didn't find magic numbers, something wrong.");
 
-    	return;
+    	return NULL;
     }
     
     /*Lock nextBufp before entering main loop*/
@@ -149,61 +155,212 @@ void *DataCANHandler::readIncomingData(void)
 
     while(ros::ok())
     {
-        /*Start reading UART data and writing to buffer while also checking for magicWord*/
-        last8Bytes[0] = last8Bytes[1];
-        last8Bytes[1] = last8Bytes[2];
-        last8Bytes[2] = last8Bytes[3];
-        last8Bytes[3] = last8Bytes[4];
-        last8Bytes[4] = last8Bytes[5];
-        last8Bytes[5] = last8Bytes[6];
-        last8Bytes[6] = last8Bytes[7];
-        mySerialObject.read(&last8Bytes[7], 1);
-        
-        nextBufp->push_back( last8Bytes[7] );  //push byte onto buffer
-        
-        //ROS_INFO("DataCANHandler Read Thread: last8bytes = %02x%02x %02x%02x %02x%02x %02x%02x",  last8Bytes[7], last8Bytes[6], last8Bytes[5], last8Bytes[4], last8Bytes[3], last8Bytes[2], last8Bytes[1], last8Bytes[0]);
-        
-        /*If a magicWord is found wait for sorting to finish and switch buffers*/
-        if( isMagicWord(last8Bytes) )
-        {
-            //ROS_INFO("Found magic word");
-        
-            /*Lock countSync Mutex while unlocking nextBufp so that the swap thread can use it*/
-            pthread_mutex_lock(&countSync_mutex);
-            pthread_mutex_unlock(&nextBufp_mutex);
-            
-            /*increment countSync*/
-            countSync++;
-            
-            /*If this is the first packet to be found, increment countSync again since Sort thread is not reading data yet*/
-            if(firstPacketReady == 0)
-            {
-                countSync++;
-                firstPacketReady = 1;
-            }
-            
-            /*Signal Swap Thread to run if countSync has reached its max value*/
-            if(countSync == COUNT_SYNC_MAX)
-            {
-                pthread_cond_signal(&countSync_max_cv);
-            }
-            
-            /*Wait for the Swap thread to finish swapping pointers and signal us to continue*/
-            pthread_cond_wait(&read_go_cv, &countSync_mutex);
-            
-            /*Unlock countSync so that Swap Thread can use it*/
-            pthread_mutex_unlock(&countSync_mutex);
-            pthread_mutex_lock(&nextBufp_mutex);
-            
-            nextBufp->clear();
-            memset(last8Bytes, 0, sizeof(last8Bytes));
-              
-        }
-      
+    	/*Read CAN frame*/
+		if( readCAN(&frame) < 0 )
+		{
+			ROS_INFO("Failed to read CAN bus.");
+
+			return NULL;
+		}
+		ROS_INFO("Read one frame from CAN bus.");
+		ROS_INFO_STREAM("CAN ID: 0x" << std::hex << frame.can_id);
+		ROS_INFO_STREAM("Data length: " << (int)frame.len);
+		ROS_INFO_STREAM("Flags: 0x" << std::hex << (int)frame.flags);
+		for (int i = 0; i < frame.len; i++)
+		{
+			ROS_INFO_STREAM("data[" << i << "]: 0x" << std::hex << (int)frame.data[i]);
+		}
+
+		switch(frame.can_id)
+		{
+			case 0xC1:
+			    /*Check if the first 8 bytes are magic numbers, if not something is wrong, not need for CAN bus*/
+				last8Bytes[0] = frame.data[0];
+				last8Bytes[1] = frame.data[1];
+				last8Bytes[2] = frame.data[2];
+				last8Bytes[3] = frame.data[3];
+				last8Bytes[4] = frame.data[4];
+				last8Bytes[5] = frame.data[5];
+				last8Bytes[6] = frame.data[6];
+				last8Bytes[7] = frame.data[7];
+			    if(isMagicWord(last8Bytes))
+			    {
+			    	//ROS_INFO("Found magic word");
+
+					/*Lock countSync Mutex while unlocking nextBufp so that the swap thread can use it*/
+					pthread_mutex_lock(&countSync_mutex);
+					pthread_mutex_unlock(&nextBufp_mutex);
+
+					/*increment countSync*/
+					countSync++;
+
+					/*If this is the first packet to be found, increment countSync again since Sort thread is not reading data yet*/
+					if(firstPacketReady == 0)
+					{
+						countSync++;
+						firstPacketReady = 1;
+					}
+
+					/*Signal Swap Thread to run if countSync has reached its max value*/
+					if(countSync == COUNT_SYNC_MAX)
+					{
+						pthread_cond_signal(&countSync_max_cv);
+					}
+
+					/*Wait for the Swap thread to finish swapping pointers and signal us to continue*/
+					pthread_cond_wait(&read_go_cv, &countSync_mutex);
+
+					/*Unlock countSync so that Swap Thread can use it*/
+					pthread_mutex_unlock(&countSync_mutex);
+					pthread_mutex_lock(&nextBufp_mutex);
+
+					nextBufp->clear();
+					memset(last8Bytes, 0, sizeof(last8Bytes));
+
+				    //push header onto buffer
+				    for(int i = 8; i < 40; i++)
+				    {
+				    	nextBufp->push_back( frame.data[i] );  //push byte onto buffer
+				    }
+			    }
+			    else
+			    {
+			    	ROS_INFO("Didn't find magic numbers, something wrong.");
+
+			    	return NULL;
+			    }
+
+				break;
+			case 0xD1:
+				if(msg_tl_points)
+				{
+					tlvType = (MmwDemo_Output_TLV_Types)frame.data[0];
+					tlvLen = frame.data[1];
+
+					msg_tl_points = 0;
+				}
+				else
+				{
+					if (tlvLen > 64)
+					{
+						for(int i = 0; i < 64; i++)
+						{
+							nextBufp->push_back( frame.data[i] );
+						}
+
+						tlvLen -= 64;
+					}
+					else
+					{
+						for(int i = 0; i < tlvLen; i++)
+						{
+							nextBufp->push_back( frame.data[i] );
+						}
+
+						msg_tl_points = 1;
+					}
+				}
+
+				break;
+			case 0xD2:
+				if(msg_tl_range)
+				{
+					tlvType = (MmwDemo_Output_TLV_Types)frame.data[0];
+					tlvLen = frame.data[1];
+
+					msg_tl_range = 0;
+				}
+				else
+				{
+					if (tlvLen > 64)
+					{
+						for(int i = 0; i < 64; i++)
+						{
+							nextBufp->push_back( frame.data[i] );
+						}
+
+						tlvLen -= 64;
+					}
+					else
+					{
+						for(int i = 0; i < tlvLen; i++)
+						{
+							nextBufp->push_back( frame.data[i] );
+						}
+
+						msg_tl_range = 1;
+					}
+				}
+
+				break;
+			case 0xD3:
+				if(msg_tl_noise)
+				{
+					tlvType = (MmwDemo_Output_TLV_Types)frame.data[0];
+					tlvLen = frame.data[1];
+
+					msg_tl_noise = 0;
+				}
+				else
+				{
+					if (tlvLen > 64)
+					{
+						for(int i = 0; i < 64; i++)
+						{
+							nextBufp->push_back( frame.data[i] );
+						}
+
+						tlvLen -= 64;
+					}
+					else
+					{
+						for(int i = 0; i < tlvLen; i++)
+						{
+							nextBufp->push_back( frame.data[i] );
+						}
+
+						msg_tl_noise = 1;
+					}
+				}
+
+				break;
+			case 0xD6:
+				if(msg_tl_stats)
+				{
+					tlvType = (MmwDemo_Output_TLV_Types)frame.data[0];
+					tlvLen = frame.data[1];
+
+					msg_tl_stats = 0;
+				}
+				else
+				{
+					if (tlvLen > 64)
+					{
+						for(int i = 0; i < 64; i++)
+						{
+							nextBufp->push_back( frame.data[i] );
+						}
+
+						tlvLen -= 64;
+					}
+					else
+					{
+						for(int i = 0; i < tlvLen; i++)
+						{
+							nextBufp->push_back( frame.data[i] );
+						}
+
+						msg_tl_stats = 1;
+					}
+				}
+
+				break;
+			case 0xB1:
+				break;
+			default:
+				break;
+		}
     }
-    
-    
-    mySerialObject.close();
     
     pthread_exit(NULL);
 }
