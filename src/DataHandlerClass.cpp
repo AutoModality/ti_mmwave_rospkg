@@ -91,6 +91,12 @@ void *DataCANHandler::readIncomingData(void)
     int msg_tl_range = 1;
     int msg_tl_noise = 1;
     int msg_tl_stats = 1;
+    int count_c1 = 1;
+    int count_d1 = 0;
+    int count_d2 = 0;
+    int count_d3 = 0;
+    int count_d6 = 0;
+    int count_b1 = 0;
     
     /*Read CAN frame*/
     if( readCAN(&frame) < 0 )
@@ -99,17 +105,17 @@ void *DataCANHandler::readIncomingData(void)
 
 		return NULL;
 	}
-    ROS_INFO("Read one frame from CAN bus.");
-	ROS_INFO_STREAM("CAN ID: 0x" << std::hex << frame.can_id);
-	ROS_INFO_STREAM("Data length: " << (int)frame.len);
-	ROS_INFO_STREAM("Flags: 0x" << std::hex << (int)frame.flags);
-	for (int i = 0; i < frame.len; i++)
-	{
-		ROS_INFO_STREAM("data[" << i << "]: 0x" << std::hex << (int)frame.data[i]);
-	}
+    //ROS_INFO("Read one frame from CAN bus.");
+	//ROS_INFO_STREAM("CAN ID: 0x" << std::hex << frame.can_id);
+	//ROS_INFO_STREAM("Data length: " << (int)frame.len);
+	//ROS_INFO_STREAM("Flags: 0x" << std::hex << (int)frame.flags);
+	//for (int i = 0; i < frame.len; i++)
+	//{
+	//	ROS_INFO_STREAM("data[" << i << "]: 0x" << std::hex << (int)frame.data[i]);
+	//}
 
 	// Check if it is a header frame
-	while(frame.can_id != 0xC1)
+	while((frame.can_id & 0x1FFFFFFFU) != 0xC1)
 	{
 		/*Read CAN frame*/
 		if( readCAN(&frame) < 0 )
@@ -118,14 +124,14 @@ void *DataCANHandler::readIncomingData(void)
 
 			return NULL;
 		}
-		ROS_INFO("Read one frame from CAN bus.");
-		ROS_INFO_STREAM("CAN ID: 0x" << std::hex << frame.can_id);
-		ROS_INFO_STREAM("Data length: " << (int)frame.len);
-		ROS_INFO_STREAM("Flags: 0x" << std::hex << (int)frame.flags);
-		for (int i = 0; i < frame.len; i++)
-		{
-			ROS_INFO_STREAM("data[" << i << "]: 0x" << std::hex << (int)frame.data[i]);
-		}
+		//ROS_INFO("Read one frame from CAN bus.");
+		//ROS_INFO_STREAM("CAN ID: 0x" << std::hex << (frame.can_id & 0x1FFFFFFFU));
+		//ROS_INFO_STREAM("Data length: " << (int)frame.len);
+		//ROS_INFO_STREAM("Flags: 0x" << std::hex << (int)frame.flags);
+		//for (int i = 0; i < frame.len; i++)
+		//{
+		//	ROS_INFO_STREAM("data[" << i << "]: 0x" << std::hex << (int)frame.data[i]);
+		//}
 	}
     
     /*Check if the first 8 bytes are magic numbers, if not something is wrong, not need for CAN bus*/
@@ -153,6 +159,14 @@ void *DataCANHandler::readIncomingData(void)
     	nextBufp->push_back( frame.data[i] );  //push byte onto buffer
     }
 
+	//print the buffer
+	//ROS_INFO("Size of buffer: %ld", (*nextBufp).size());
+	//for(auto i: *nextBufp)
+	//{
+	//	std::cout << std::hex << (int)i << " " << std::dec;
+	//}
+	//std::cout << "\n";
+
     while(ros::ok())
     {
     	/*Read CAN frame*/
@@ -162,18 +176,19 @@ void *DataCANHandler::readIncomingData(void)
 
 			return NULL;
 		}
-		ROS_INFO("Read one frame from CAN bus.");
-		ROS_INFO_STREAM("CAN ID: 0x" << std::hex << frame.can_id);
-		ROS_INFO_STREAM("Data length: " << (int)frame.len);
-		ROS_INFO_STREAM("Flags: 0x" << std::hex << (int)frame.flags);
-		for (int i = 0; i < frame.len; i++)
-		{
-			ROS_INFO_STREAM("data[" << i << "]: 0x" << std::hex << (int)frame.data[i]);
-		}
+		//ROS_INFO("Read one frame from CAN bus.");
+		//ROS_INFO_STREAM("CAN ID: 0x" << std::hex << frame.can_id);
+		//ROS_INFO_STREAM("Data length: " << (int)frame.len);
+		//ROS_INFO_STREAM("Flags: 0x" << std::hex << (int)frame.flags);
+		//for (int i = 0; i < frame.len; i++)
+		//{
+		//	ROS_INFO_STREAM("data[" << i << "]: 0x" << std::hex << (int)frame.data[i]);
+		//}
 
-		switch(frame.can_id)
+		switch((frame.can_id & 0x1FFFFFFFU))
 		{
 			case 0xC1:
+				//ROS_INFO("Number of frame 0xC1: %d", ++count_c1);
 			    /*Check if the first 8 bytes are magic numbers, if not something is wrong, not need for CAN bus*/
 				last8Bytes[0] = frame.data[0];
 				last8Bytes[1] = frame.data[1];
@@ -214,13 +229,21 @@ void *DataCANHandler::readIncomingData(void)
 					pthread_mutex_unlock(&countSync_mutex);
 					pthread_mutex_lock(&nextBufp_mutex);
 
+					//print the buffer
+					//ROS_INFO("Size of buffer: %ld", (*nextBufp).size());
+					//for(auto i: *nextBufp)
+					//{
+					//	std::cout << std::hex << (int)i << " ";
+					//}
+					//std::cout << std::dec << "\n";
+
 					nextBufp->clear();
 					memset(last8Bytes, 0, sizeof(last8Bytes));
-
+					
 				    //push header onto buffer
 				    for(int i = 8; i < 40; i++)
 				    {
-				    	nextBufp->push_back( frame.data[i] );  //push byte onto buffer
+				    	nextBufp->push_back( frame.data[i] );  //push bytes onto buffer
 				    }
 			    }
 			    else
@@ -232,10 +255,17 @@ void *DataCANHandler::readIncomingData(void)
 
 				break;
 			case 0xD1:
+				//ROS_INFO("Number of frame 0xD1: %d", ++count_d1);
 				if(msg_tl_points)
 				{
-					tlvType = (MmwDemo_Output_TLV_Types)frame.data[0];
-					tlvLen = frame.data[1];
+					tlvType = (MmwDemo_Output_TLV_Types)((frame.data[3] << 24) + (frame.data[2] << 16) + (frame.data[1] << 8) + frame.data[0]);
+					tlvLen = ((frame.data[7] << 24) + (frame.data[6] << 16) + (frame.data[5] << 8) + frame.data[4]);
+					//std::cout << "tlvType: " << tlvType << "; tlvLen: 0x" << std::hex << tlvLen << std::dec << "\n";
+					
+					for(int i = 0; i < 8; i++)
+					{
+						nextBufp->push_back( frame.data[i] );
+					}
 
 					msg_tl_points = 0;
 				}
@@ -257,16 +287,31 @@ void *DataCANHandler::readIncomingData(void)
 							nextBufp->push_back( frame.data[i] );
 						}
 
-						msg_tl_points = 1;
+						msg_tl_points = 1;					
+
+						//print the buffer
+						ROS_INFO("Size of buffer: %ld", (*nextBufp).size());
+						for(auto i: *nextBufp)
+						{
+							std::cout << std::hex << (int)i << " ";
+						}
+						std::cout << std::dec << "\n";
 					}
 				}
-
+				
 				break;
 			case 0xD2:
+				//ROS_INFO("Number of frame 0xD2: %d", ++count_d2);
 				if(msg_tl_range)
 				{
-					tlvType = (MmwDemo_Output_TLV_Types)frame.data[0];
-					tlvLen = frame.data[1];
+					tlvType = (MmwDemo_Output_TLV_Types)((frame.data[3] << 24) + (frame.data[2] << 16) + (frame.data[1] << 8) + frame.data[0]);
+					tlvLen = ((frame.data[7] << 24) + (frame.data[6] << 16) + (frame.data[5] << 8) + frame.data[4]);
+					//std::cout << "tlvType: " << tlvType << "; tlvLen: 0x" << std::hex << tlvLen << std::dec << "\n";
+					
+					for(int i = 0; i < 8; i++)
+					{
+						nextBufp->push_back( frame.data[i] );
+					}
 
 					msg_tl_range = 0;
 				}
@@ -288,16 +333,31 @@ void *DataCANHandler::readIncomingData(void)
 							nextBufp->push_back( frame.data[i] );
 						}
 
-						msg_tl_range = 1;
+						msg_tl_range = 1;					
+
+						//print the buffer
+						//ROS_INFO("Size of buffer: %ld", (*nextBufp).size());
+						//for(auto i: *nextBufp)
+						//{
+						//	std::cout << std::hex << (int)i << " ";
+						//}
+						//std::cout << std::dec << "\n";
 					}
 				}
 
 				break;
 			case 0xD3:
+				//ROS_INFO("Number of frame 0xD3: %d", ++count_d3);
 				if(msg_tl_noise)
 				{
-					tlvType = (MmwDemo_Output_TLV_Types)frame.data[0];
-					tlvLen = frame.data[1];
+					tlvType = (MmwDemo_Output_TLV_Types)((frame.data[3] << 24) + (frame.data[2] << 16) + (frame.data[1] << 8) + frame.data[0]);
+					tlvLen = ((frame.data[7] << 24) + (frame.data[6] << 16) + (frame.data[5] << 8) + frame.data[4]);
+					//std::cout << "tlvType: " << tlvType << "; tlvLen: 0x" << std::hex << tlvLen << std::dec << "\n";
+					
+					for(int i = 0; i < 8; i++)
+					{
+						nextBufp->push_back( frame.data[i] );
+					}
 
 					msg_tl_noise = 0;
 				}
@@ -319,16 +379,31 @@ void *DataCANHandler::readIncomingData(void)
 							nextBufp->push_back( frame.data[i] );
 						}
 
-						msg_tl_noise = 1;
+						msg_tl_noise = 1;					
+
+						//print the buffer
+						//ROS_INFO("Size of buffer: %ld", (*nextBufp).size());
+						//for(auto i: *nextBufp)
+						//{
+						//	std::cout << std::hex << (int)i << " ";
+						//}
+						//std::cout << std::dec << "\n";
 					}
 				}
 
 				break;
 			case 0xD6:
+				//ROS_INFO("Number of frame 0xD6: %d", ++count_d6);
 				if(msg_tl_stats)
 				{
-					tlvType = (MmwDemo_Output_TLV_Types)frame.data[0];
-					tlvLen = frame.data[1];
+					tlvType = (MmwDemo_Output_TLV_Types)((frame.data[3] << 24) + (frame.data[2] << 16) + (frame.data[1] << 8) + frame.data[0]);
+					tlvLen = ((frame.data[7] << 24) + (frame.data[6] << 16) + (frame.data[5] << 8) + frame.data[4]);
+					//std::cout << "tlvType: " << tlvType << "; tlvLen: 0x" << std::hex << tlvLen << std::dec << "\n";
+					
+					for(int i = 0; i < 8; i++)
+					{
+						nextBufp->push_back( frame.data[i] );
+					}
 
 					msg_tl_stats = 0;
 				}
@@ -350,12 +425,21 @@ void *DataCANHandler::readIncomingData(void)
 							nextBufp->push_back( frame.data[i] );
 						}
 
-						msg_tl_stats = 1;
+						msg_tl_stats = 1;					
+
+						//print the buffer
+						//ROS_INFO("Size of buffer: %ld", (*nextBufp).size());
+						//for(auto i: *nextBufp)
+						//{
+						//	std::cout << std::hex << (int)i << " ";
+						//}
+						//std::cout << std::dec << "\n";
 					}
 				}
 
 				break;
 			case 0xB1:
+				//ROS_INFO("Number of frame 0xB1: %d", ++count_b1);
 				break;
 			default:
 				break;
@@ -454,6 +538,7 @@ void *DataCANHandler::sortIncomingData( void )
         case READ_HEADER:
             
             //make sure packet has at least first three fields (12 bytes) before we read them (does not include magicWord since it was already removed)
+            std::cout << "currentBufp size: " << (*currentBufp).size() << "\n";
             if(currentBufp->size() < 12)
             {
                sorterState = SWAP_BUFFERS;
