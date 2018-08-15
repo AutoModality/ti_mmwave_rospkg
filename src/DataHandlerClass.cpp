@@ -288,7 +288,13 @@ void *DataUARTHandler::sortIncomingData( void )
         {
             
         case READ_HEADER:
-            
+            ROS_INFO("Size of buffer: %ld", (*currentBufp).size());
+            for(auto i: *currentBufp)
+            {
+            	std::cout <<std::hex << (int)i << " ";
+            }
+            std::cout <<std::dec << "\n";
+
             //make sure packet has at least first three fields (12 bytes) before we read them (does not include magicWord since it was already removed)
             if(currentBufp->size() < 12)
             {
@@ -333,6 +339,8 @@ void *DataUARTHandler::sortIncomingData( void )
                sorterState = SWAP_BUFFERS;
                break;
             }
+            ROS_INFO("currentBufp->size(): %ld", currentBufp->size());
+            ROS_INFO("headerSize: %d", headerSize);
             
             //get frameNumber (4 bytes)
             memcpy( &mmwData.header.frameNumber, &currentBufp->at(currentDatap), sizeof(mmwData.header.frameNumber));
@@ -363,6 +371,8 @@ void *DataUARTHandler::sortIncomingData( void )
             }
 
             //if packet lengths do not patch, throw it away
+            ROS_INFO("mmwData.header.totalPacketLen: %d", mmwData.header.totalPacketLen);
+            ROS_INFO("currentBufp->size(): %ld", currentBufp->size());
             if(mmwData.header.totalPacketLen == currentBufp->size() )
             {
                sorterState = CHECK_TLV_TYPE;
@@ -378,12 +388,12 @@ void *DataUARTHandler::sortIncomingData( void )
             
             //get number of objects
             memcpy( &mmwData.numObjOut, &currentBufp->at(currentDatap), sizeof(mmwData.numObjOut));
-            ROS_INFO_STREAM("Number of objects out: " << mmwData.numObjOut);
+            //ROS_INFO_STREAM("Number of objects out: " << mmwData.numObjOut);
             currentDatap += ( sizeof(mmwData.numObjOut) );
             
             //get xyzQFormat
             memcpy( &mmwData.xyzQFormat, &currentBufp->at(currentDatap), sizeof(mmwData.xyzQFormat));
-            ROS_INFO_STREAM("xyz Q format: " << mmwData.xyzQFormat);
+            //ROS_INFO_STREAM("xyz Q format: " << mmwData.xyzQFormat);
             currentDatap += ( sizeof(mmwData.xyzQFormat) );
             
             RScan->header.seq = 0;
@@ -422,32 +432,32 @@ void *DataUARTHandler::sortIncomingData( void )
             {
                 //get object range index
                 memcpy( &mmwData.objOut.rangeIdx, &currentBufp->at(currentDatap), sizeof(mmwData.objOut.rangeIdx));
-                ROS_INFO_STREAM("objOut randeIdx: " << mmwData.objOut.rangeIdx);
+                //ROS_INFO_STREAM("objOut randeIdx: " << mmwData.objOut.rangeIdx);
                 currentDatap += ( sizeof(mmwData.objOut.rangeIdx) );
                 
                 //get object doppler index
                 memcpy( &mmwData.objOut.dopplerIdx, &currentBufp->at(currentDatap), sizeof(mmwData.objOut.dopplerIdx));
-                ROS_INFO_STREAM("objOut dopplerIdx: " << mmwData.objOut.dopplerIdx);
+                //ROS_INFO_STREAM("objOut dopplerIdx: " << mmwData.objOut.dopplerIdx);
                 currentDatap += ( sizeof(mmwData.objOut.dopplerIdx) );
                 
                 //get object peak intensity value
                 memcpy( &mmwData.objOut.peakVal, &currentBufp->at(currentDatap), sizeof(mmwData.objOut.peakVal));
-                ROS_INFO_STREAM("objOut peakVal: " << mmwData.objOut.peakVal);
+                //ROS_INFO_STREAM("objOut peakVal: " << mmwData.objOut.peakVal);
                 currentDatap += ( sizeof(mmwData.objOut.peakVal) );
                 
                 //get object x-coordinate
                 memcpy( &mmwData.objOut.x, &currentBufp->at(currentDatap), sizeof(mmwData.objOut.x));
-                ROS_INFO_STREAM("objOut x: " << mmwData.objOut.x);
+                //ROS_INFO_STREAM("objOut x: " << mmwData.objOut.x);
                 currentDatap += ( sizeof(mmwData.objOut.x) );
                 
                 //get object y-coordinate
                 memcpy( &mmwData.objOut.y, &currentBufp->at(currentDatap), sizeof(mmwData.objOut.y));
-                ROS_INFO_STREAM("objOut y: " << mmwData.objOut.y);
+                //ROS_INFO_STREAM("objOut y: " << mmwData.objOut.y);
                 currentDatap += ( sizeof(mmwData.objOut.y) );
                 
                 //get object z-coordinate
                 memcpy( &mmwData.objOut.z, &currentBufp->at(currentDatap), sizeof(mmwData.objOut.z));
-                ROS_INFO_STREAM("objOut z: " << mmwData.objOut.z);
+                //ROS_INFO_STREAM("objOut z: " << mmwData.objOut.z);
                 currentDatap += ( sizeof(mmwData.objOut.z) );
                 
                 //convert from Qformat to float(meters)
