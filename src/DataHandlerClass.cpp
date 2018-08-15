@@ -149,6 +149,7 @@ void *DataCANHandler::readIncomingData(void)
 
     	return NULL;
     }
+    //ROS_INFO("Found magic word");
     
     /*Lock nextBufp before entering main loop*/
     pthread_mutex_lock(&nextBufp_mutex);
@@ -159,13 +160,13 @@ void *DataCANHandler::readIncomingData(void)
     	nextBufp->push_back( frame.data[i] );  //push byte onto buffer
     }
 
-	//print the buffer
-	//ROS_INFO("Size of buffer: %ld", (*nextBufp).size());
-	//for(auto i: *nextBufp)
-	//{
-	//	std::cout << std::hex << (int)i << " " << std::dec;
-	//}
-	//std::cout << "\n";
+	/*print the buffer
+	ROS_INFO("Size of buffer: %ld", (*nextBufp).size());
+	for(auto i: *nextBufp)
+	{
+		std::cout << std::hex << (int)i << " " << std::dec;
+	}
+	std::cout << "\n";*/
 
     while(ros::ok())
     {
@@ -245,6 +246,14 @@ void *DataCANHandler::readIncomingData(void)
 				    {
 				    	nextBufp->push_back( frame.data[i] );  //push bytes onto buffer
 				    }
+				    
+					/*print the buffer
+					ROS_INFO("Size of buffer after clear: %ld", (*nextBufp).size());
+					for(auto i: *nextBufp)
+					{
+						std::cout << std::hex << (int)i << " ";
+					}
+					std::cout << std::dec << "\n";*/
 			    }
 			    else
 			    {
@@ -290,12 +299,12 @@ void *DataCANHandler::readIncomingData(void)
 						msg_tl_points = 1;					
 
 						//print the buffer
-						ROS_INFO("Size of buffer: %ld", (*nextBufp).size());
-						for(auto i: *nextBufp)
-						{
-							std::cout << std::hex << (int)i << " ";
-						}
-						std::cout << std::dec << "\n";
+						//ROS_INFO("Size of buffer: %ld", (*nextBufp).size());
+						//for(auto i: *nextBufp)
+						//{
+						//	std::cout << std::hex << (int)i << " ";
+						//}
+						//std::cout << std::dec << "\n";
 					}
 				}
 				
@@ -537,72 +546,101 @@ void *DataCANHandler::sortIncomingData( void )
             
         case READ_HEADER:
             
-            //make sure packet has at least first three fields (12 bytes) before we read them (does not include magicWord since it was already removed)
-            std::cout << "currentBufp size: " << (*currentBufp).size() << "\n";
+            /*print the buffer
+			ROS_INFO("Size of buffer: %ld", (*currentBufp).size());
+			for(auto i: *currentBufp)
+			{
+				std::cout << std::hex << (int)i << " ";
+			}
+			std::cout << std::dec << "\n";*/
+			
+            //make sure packet has at least first three fields (12 bytes) before we read them (does not include magicWord since it was already removed)            
             if(currentBufp->size() < 12)
             {
                sorterState = SWAP_BUFFERS;
                break;
             }
             
-            //get version (4 bytes)
-            memcpy( &mmwData.header.version, &currentBufp->at(currentDatap), sizeof(mmwData.header.version));
+            //get version (4 bytes)           
+            memcpy( &mmwData.header.version, &currentBufp->at(currentDatap), sizeof(mmwData.header.version)); 
+			//ROS_INFO("mmwData.header.version: 0x%x", mmwData.header.version);
             currentDatap += ( sizeof(mmwData.header.version) );
             
             //get totalPacketLen (4 bytes)
             memcpy( &mmwData.header.totalPacketLen, &currentBufp->at(currentDatap), sizeof(mmwData.header.totalPacketLen));
+			//ROS_INFO("mmwData.header.totalPacketLen: %d", mmwData.header.totalPacketLen);
             currentDatap += ( sizeof(mmwData.header.totalPacketLen) );
             
             //get platform (4 bytes)
             memcpy( &mmwData.header.platform, &currentBufp->at(currentDatap), sizeof(mmwData.header.platform));
+			//ROS_INFO("mmwData.header.platform: 0x%x", mmwData.header.platform);
             currentDatap += ( sizeof(mmwData.header.platform) );      
             
             //if packet doesn't have correct header size (which is based on platform and SDK version), throw it away (does not include magicWord since it was already removed)
-	    if((((mmwData.header.version >> 24) & 0xFF) < 1) || (((mmwData.header.version >> 16) & 0xFF) < 1))  //check if SDK version is older than 1.1
-	    {
-               //ROS_INFO("mmWave device firmware detected version: 0x%8.8X", mmwData.header.version);
-	       headerSize = 28;
-	    }
-            else if((mmwData.header.platform & 0xFFFF) == 0x1443)
-	    {
-	       headerSize = 28;
-	    }
-	    else  // 1642
-	    {
-	       headerSize = 32;
-	    }
+			if((((mmwData.header.version >> 24) & 0xFF) < 1) || (((mmwData.header.version >> 16) & 0xFF) < 1))  //check if SDK version is older than 1.1
+			{
+		       //ROS_INFO("mmWave device firmware detected version: 0x%8.8X", mmwData.header.version);
+			   headerSize = 28;
+			}
+		        else if((mmwData.header.platform & 0xFFFF) == 0x1443)
+			{
+			   headerSize = 28;
+			}
+			else  // 1642
+			{
+			   headerSize = 32;
+			}
             if(currentBufp->size() < headerSize)
             {
                sorterState = SWAP_BUFFERS;
                break;
             }
+            //ROS_INFO("currentBufp->size(): %ld", currentBufp->size());
+            //ROS_INFO("headerSize: %d", headerSize);
             
             //get frameNumber (4 bytes)
             memcpy( &mmwData.header.frameNumber, &currentBufp->at(currentDatap), sizeof(mmwData.header.frameNumber));
+			//ROS_INFO("mmwData.header.frameNumber: 0x%x", mmwData.header.frameNumber);
             currentDatap += ( sizeof(mmwData.header.frameNumber) );
             
             //get timeCpuCycles (4 bytes)
             memcpy( &mmwData.header.timeCpuCycles, &currentBufp->at(currentDatap), sizeof(mmwData.header.timeCpuCycles));
+			//ROS_INFO("mmwData.header.timeCpuCycles: 0x%x", mmwData.header.timeCpuCycles);
             currentDatap += ( sizeof(mmwData.header.timeCpuCycles) );
             
             //get numDetectedObj (4 bytes)
             memcpy( &mmwData.header.numDetectedObj, &currentBufp->at(currentDatap), sizeof(mmwData.header.numDetectedObj));
+			//ROS_INFO("mmwData.header.numDetectedObj: %d", mmwData.header.numDetectedObj);
             currentDatap += ( sizeof(mmwData.header.numDetectedObj) );
             
             //get numTLVs (4 bytes)
             memcpy( &mmwData.header.numTLVs, &currentBufp->at(currentDatap), sizeof(mmwData.header.numTLVs));
+			//ROS_INFO("mmwData.header.numTLVs: %d", mmwData.header.numTLVs);
             currentDatap += ( sizeof(mmwData.header.numTLVs) );
             
             //get subFrameNumber (4 bytes) (not used for XWR1443)
             if((mmwData.header.platform & 0xFFFF) != 0x1443)
-	    {
+	    	{
                memcpy( &mmwData.header.subFrameNumber, &currentBufp->at(currentDatap), sizeof(mmwData.header.subFrameNumber));
+			   //ROS_INFO("mmwData.header.subFrameNumber: 0x%x", mmwData.header.subFrameNumber);
                currentDatap += ( sizeof(mmwData.header.subFrameNumber) );
-	    }
+	    	}
 
             //if packet lengths do not patch, throw it away
-            if(mmwData.header.totalPacketLen == currentBufp->size() )
-            {
+            //ROS_INFO("mmwData.header.totalPacketLen: %d", mmwData.header.totalPacketLen);
+            //ROS_INFO("(48-8-8+8*4+mmwData.header.numDetectedObj*12+4+2*64*8+24): %d", (48-8-8+8*4+mmwData.header.numDetectedObj*12+4+2*64*8+24));
+            //ROS_INFO("currentBufp->size(): %ld", currentBufp->size());
+            //if(mmwData.header.totalPacketLen == currentBufp->size() )
+            if( (48-8-8+8*4+mmwData.header.numDetectedObj*12+4+2*64*8+24) == currentBufp->size() )
+            //48: header size
+            //8: magic number
+            //8: padding of header
+            //8*4: D1/D2/D3/D6 tl (type & length)
+            //mmwData.header.numDetectedObj*12: each object is 12 bytes
+            //4: the first two 16 bits are id and number of objects
+            //2*64*8: D2 and D3 are 8 frames of 64 bytes
+            //24: length of D6
+            {//On CAN bus the packet length seems always not equal to the size of data passed in one packet.
                sorterState = CHECK_TLV_TYPE;
             }
             else sorterState = SWAP_BUFFERS;
@@ -610,7 +648,7 @@ void *DataCANHandler::sortIncomingData( void )
             break;
             
         case READ_OBJ_STRUCT:
-            
+            //ROS_INFO("READ_OBJ_STRUCT");
             i = 0;
             offset = 0;
             
