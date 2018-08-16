@@ -199,6 +199,13 @@ void *DataCANHandler::readIncomingData(void)
 				last8Bytes[5] = frame.data[5];
 				last8Bytes[6] = frame.data[6];
 				last8Bytes[7] = frame.data[7];
+					
+			    //push magic numbers in header on the end of the buffer (this is the way for UART)
+			    for(int i = 0; i < 8; i++)
+			    {
+			    	nextBufp->push_back( frame.data[i] );  //push bytes onto buffer
+			    }
+				    
 			    if(isMagicWord(last8Bytes))
 			    {
 			    	//ROS_INFO("Found magic word");
@@ -449,6 +456,12 @@ void *DataCANHandler::readIncomingData(void)
 				break;
 			case 0xB1:
 				//ROS_INFO("Number of frame 0xB1: %d", ++count_b1);
+				
+				for(int i = 0; i < (int)frame.len; i++)
+				{
+					nextBufp->push_back( frame.data[i] );
+				}
+						
 				break;
 			default:
 				break;
@@ -630,8 +643,10 @@ void *DataCANHandler::sortIncomingData( void )
             //ROS_INFO("mmwData.header.totalPacketLen: %d", mmwData.header.totalPacketLen);
             //ROS_INFO("(48-8-8+8*4+mmwData.header.numDetectedObj*12+4+2*64*8+24): %d", (48-8-8+8*4+mmwData.header.numDetectedObj*12+4+2*64*8+24));
             //ROS_INFO("currentBufp->size(): %ld", currentBufp->size());
-            //if(mmwData.header.totalPacketLen == currentBufp->size() )
-            if( (48-8-8+8*4+mmwData.header.numDetectedObj*12+4+2*64*8+24) == currentBufp->size() )
+            if(mmwData.header.totalPacketLen == currentBufp->size() )
+            //On CAN bus the packet length seems always not equal to the size of data passed in one packet.
+            //This is because of the padding, go back to the original code, with revision of the code to get the packet.
+            //if( (48-8-8+8*4+mmwData.header.numDetectedObj*12+4+2*64*8+24) == currentBufp->size() ) 
             //48: header size
             //8: magic number
             //8: padding of header
@@ -640,7 +655,7 @@ void *DataCANHandler::sortIncomingData( void )
             //4: the first two 16 bits are id and number of objects
             //2*64*8: D2 and D3 are 8 frames of 64 bytes
             //24: length of D6
-            {//On CAN bus the packet length seems always not equal to the size of data passed in one packet.
+            {
                sorterState = CHECK_TLV_TYPE;
             }
             else sorterState = SWAP_BUFFERS;
