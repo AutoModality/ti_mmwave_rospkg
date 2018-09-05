@@ -84,7 +84,7 @@ void *DataCANHandler::readIncomingData(void)
 {
     int firstPacketReady = 0;
     uint8_t last8Bytes[8] = {0};
-    struct canfd_frame frame;
+    struct can_frame frame;
     MmwDemo_Output_TLV_Types tlvType = MMWDEMO_OUTPUT_MSG_NULL;
     uint32_t tlvLen = 0;
     int msg_tl_points = 1;
@@ -114,52 +114,30 @@ void *DataCANHandler::readIncomingData(void)
 	//	ROS_INFO_STREAM("data[" << i << "]: 0x" << std::hex << (int)frame.data[i]);
 	//}
 
-	// Check if it is a header frame
-	while((frame.can_id & 0x1FFFFFFFU) != 0xC1)
+	// Check if it is a radar CAN frame
+	while((frame.can_id & 0x000007FFU) != 0xC1)
 	{
-		/*Read CAN frame*/
-		if( readCAN(&frame) < 0 )
+		// Look for frame contains magic numbers
+		while (!isMagicWord(last8Bytes))
 		{
-			ROS_INFO("Failed to read CAN bus.");
+			/*Read CAN frame*/
+			if( readCAN(&frame) < 0 )
+			{
+				ROS_INFO("Failed to read CAN bus.");
 
-			return NULL;
+				return NULL;
+			}
+
+		    /*Check if the frame contains magic numbers*/
+			if (frame.can_dlc == 8)
+				for (int i = 0; i < 8; i++)
+					last8Bytes[i] = frame.data[i];
 		}
-		//ROS_INFO("Read one frame from CAN bus.");
-		//ROS_INFO_STREAM("CAN ID: 0x" << std::hex << (frame.can_id & 0x1FFFFFFFU));
-		//ROS_INFO_STREAM("Data length: " << (int)frame.len);
-		//ROS_INFO_STREAM("Flags: 0x" << std::hex << (int)frame.flags);
-		//for (int i = 0; i < frame.len; i++)
-		//{
-		//	ROS_INFO_STREAM("data[" << i << "]: 0x" << std::hex << (int)frame.data[i]);
-		//}
 	}
-    
-    /*Check if the first 8 bytes are magic numbers, if not something is wrong, not need for CAN bus*/
-	last8Bytes[0] = frame.data[0];
-	last8Bytes[1] = frame.data[1];
-	last8Bytes[2] = frame.data[2];
-	last8Bytes[3] = frame.data[3];
-	last8Bytes[4] = frame.data[4];
-	last8Bytes[5] = frame.data[5];
-	last8Bytes[6] = frame.data[6];
-	last8Bytes[7] = frame.data[7];
-    if(!isMagicWord(last8Bytes))
-    {
-    	ROS_INFO("Didn't find magic numbers, something wrong.");
 
-    	return NULL;
-    }
-    //ROS_INFO("Found magic word");
-    
     /*Lock nextBufp before entering main loop*/
     pthread_mutex_lock(&nextBufp_mutex);
     
-    //push header onto buffer
-    for(int i = 8; i < 40; i++)
-    {
-    	nextBufp->push_back( frame.data[i] );  //push byte onto buffer
-    }
-
 	/*print the buffer
 	ROS_INFO("Size of buffer: %ld", (*nextBufp).size());
 	for(auto i: *nextBufp)
@@ -186,22 +164,16 @@ void *DataCANHandler::readIncomingData(void)
 		//	ROS_INFO_STREAM("data[" << i << "]: 0x" << std::hex << (int)frame.data[i]);
 		//}
 
-		switch((frame.can_id & 0x1FFFFFFFU))
+		switch((frame.can_id & 0x000007FFU))
 		{
 			case 0xC1:
 				//ROS_INFO("Number of frame 0xC1: %d", ++count_c1);
-			    /*Check if the first 8 bytes are magic numbers, if not something is wrong, not need for CAN bus*/
-				last8Bytes[0] = frame.data[0];
-				last8Bytes[1] = frame.data[1];
-				last8Bytes[2] = frame.data[2];
-				last8Bytes[3] = frame.data[3];
-				last8Bytes[4] = frame.data[4];
-				last8Bytes[5] = frame.data[5];
-				last8Bytes[6] = frame.data[6];
-				last8Bytes[7] = frame.data[7];
+				if (frame.can_dlc == 8)
+					for (int i = 0; i < 8; i++)
+						last8Bytes[i] = frame.data[i];
 					
 			    //push magic numbers in header on the end of the buffer (this is the way for UART)
-			    for(int i = 0; i < 8; i++)
+			    for(int i = 0; i < frame.can_dlc; i++)
 			    {
 			    	nextBufp->push_back( frame.data[i] );  //push bytes onto buffer
 			    }
@@ -457,7 +429,7 @@ void *DataCANHandler::readIncomingData(void)
 			case 0xB1:
 				//ROS_INFO("Number of frame 0xB1: %d", ++count_b1);
 				
-				for(int i = 0; i < (int)frame.len; i++)
+				for(int i = 0; i < (int)frame.can_dlc; i++)
 				{
 					nextBufp->push_back( frame.data[i] );
 				}
