@@ -288,12 +288,12 @@ void *DataUARTHandler::sortIncomingData( void )
         {
             
         case READ_HEADER:
-            ROS_INFO("Size of buffer: %ld", (*currentBufp).size());
+            /*ROS_INFO("Size of buffer: %ld", (*currentBufp).size());
             for(auto i: *currentBufp)
             {
             	std::cout <<std::hex << (int)i << " ";
             }
-            std::cout <<std::dec << "\n";
+            std::cout <<std::dec << "\n";*/
 
             //make sure packet has at least first three fields (12 bytes) before we read them (does not include magicWord since it was already removed)
             if(currentBufp->size() < 12)
@@ -339,8 +339,8 @@ void *DataUARTHandler::sortIncomingData( void )
                sorterState = SWAP_BUFFERS;
                break;
             }
-            ROS_INFO("currentBufp->size(): %ld", currentBufp->size());
-            ROS_INFO("headerSize: %d", headerSize);
+            //ROS_INFO("currentBufp->size(): %ld", currentBufp->size());
+            //ROS_INFO("headerSize: %d", headerSize);
             
             //get frameNumber (4 bytes)
             memcpy( &mmwData.header.frameNumber, &currentBufp->at(currentDatap), sizeof(mmwData.header.frameNumber));
@@ -371,8 +371,8 @@ void *DataUARTHandler::sortIncomingData( void )
             }
 
             //if packet lengths do not patch, throw it away
-            ROS_INFO("mmwData.header.totalPacketLen: %d", mmwData.header.totalPacketLen);
-            ROS_INFO("currentBufp->size(): %ld", currentBufp->size());
+            //ROS_INFO("mmwData.header.totalPacketLen: %d", mmwData.header.totalPacketLen);
+            //ROS_INFO("currentBufp->size(): %ld", currentBufp->size());
             if(mmwData.header.totalPacketLen == currentBufp->size() )
             {
                sorterState = CHECK_TLV_TYPE;
