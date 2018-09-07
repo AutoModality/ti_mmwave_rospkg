@@ -41,10 +41,12 @@ int CanSocket::init(std::string ifname)
 	//To meet multi user needs the local loopback is enabled by default.
 	//Till now BlinkM LED and LW20 altimeter will not talk, so disable it.
 	//It seems "relieve" the stuck problem (stuck at CAN read); it doesn't solve the stuck problem, but much better.
-	//int loopback = 0; /* 0 = disabled, 1 = enabled (default) */
-    //setsockopt(s_, SOL_CAN_RAW, CAN_RAW_LOOPBACK, &loopback, sizeof(loopback));
-	const int canfd_on = 1;
-    setsockopt(s_, SOL_CAN_RAW, CAN_RAW_FD_FRAMES, &canfd_on, sizeof(canfd_on));
+	// The following two lines are for xWR1443
+	int loopback = 0; /* 0 = disabled, 1 = enabled (default) */
+    setsockopt(s_, SOL_CAN_RAW, CAN_RAW_LOOPBACK, &loopback, sizeof(loopback));
+	// The following two lines are for xWR1642
+	//const int canfd_on = 1;
+    //setsockopt(s_, SOL_CAN_RAW, CAN_RAW_FD_FRAMES, &canfd_on, sizeof(canfd_on));
 
 	struct timeval tv;
 	tv.tv_sec = 1;        // 1 Secs Timeout
@@ -109,6 +111,8 @@ int CanSocket::readCAN(struct can_frame *frame)
 		// paranoid check ...
 		if (nbytes < (int)sizeof(struct can_frame))
 		{
+			ROS_INFO("nbytes: %d.", nbytes);
+			ROS_INFO("sizeof(struct can_frame): %d.", (int)sizeof(struct can_frame));
 			ROS_INFO("Read CAN: incomplete CAN frame.");
 			return -1;
 		}
