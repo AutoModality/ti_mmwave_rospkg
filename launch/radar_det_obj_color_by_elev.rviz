@@ -79,7 +79,7 @@ Visualization Manager:
       Queue Size: 10
       Selectable: true
       Size (Pixels): 3
-      Size (m): 0.300000012
+      Size (m): 0.100000001
       Style: Spheres
       Topic: /mmWaveDataHdl/RScan
       Unreliable: false
@@ -150,7 +150,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 13.1007671
+      Distance: 6.91369295
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.0599999987
         Stereo Focal Distance: 1
@@ -165,10 +165,10 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.00999999978
-      Pitch: 0.559795976
+      Pitch: 0.629795969
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 2.09817815
+      Yaw: 2.9331789
     Saved: ~
 Window Geometry:
   Displays:
