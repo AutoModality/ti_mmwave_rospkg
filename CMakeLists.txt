@@ -14,7 +14,8 @@ find_package(catkin REQUIRED COMPONENTS
   std_msgs
   sensor_msgs
   message_generation
-  pluginlib
+  pluginlib	
+  am_utils
 )
 
 find_package(Boost REQUIRED )
@@ -115,7 +116,7 @@ catkin_package(
   INCLUDE_DIRS include
   LIBRARIES mmwave vb_util_lib
   #CATKIN_DEPENDS nodelet roscpp serial std_msgs
-  DEPENDS system_lib
+  DEPENDS system_lib am_utils
 )
 
 ###########
@@ -141,7 +142,7 @@ add_definitions(${PCL_DEFINITIONS})
 
 ## Declare a C++ library
  add_library(mmwave
-   src/cansocket.cpp
+#   src/cansocket.cpp
    src/mmWaveDataHdl.cpp
    src/mmWaveCommSrv.cpp
    src/DataHandlerClass.cpp

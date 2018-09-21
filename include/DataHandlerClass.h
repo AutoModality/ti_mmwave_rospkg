@@ -50,7 +50,8 @@
 #include "sensor_msgs/PointCloud2.h"
 #define COUNT_SYNC_MAX 2
 
-#include "cansocket.h"
+//#include "cansocket.h"
+#include <am_utils/cansocket.h>
 
 class DataCANHandler : public CanSocket
 {
