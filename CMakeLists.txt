@@ -14,7 +14,8 @@ find_package(catkin REQUIRED COMPONENTS
   std_msgs
   sensor_msgs
   message_generation
-  pluginlib
+  pluginlib	
+  am_utils
 )
 
 find_package(Boost REQUIRED )
@@ -115,7 +116,8 @@ catkin_package(
   INCLUDE_DIRS include
   LIBRARIES mmwave
   #CATKIN_DEPENDS nodelet roscpp serial std_msgs
-  DEPENDS system_lib
+  CATKIN_DEPENDS am_utils
+  DEPENDS system_lib 
 )
 
 ###########
@@ -141,15 +143,17 @@ add_definitions(${PCL_DEFINITIONS})
 
 ## Declare a C++ library
  add_library(mmwave
+#   src/cansocket.cpp
    src/mmWaveDataHdl.cpp
    src/mmWaveCommSrv.cpp
    src/DataHandlerClass.cpp
  )
-
 ## Add cmake target dependencies of the library
 ## as an example, code may need to be generated before libraries
 ## either from message generation or dynamic reconfigure
 add_dependencies(mmwave ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+target_link_libraries(mmwave ${serial_LIBRARIES}
+					  ${catkin_LIBRARIES})
 
 ## Declare a C++ executable
 ## With catkin_make all packages are built within a single CMake context
@@ -208,7 +212,6 @@ add_dependencies(mmwave ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TA
 set (CMAKE_CXX_STANDARD 11)
 
 add_executable(${PROJECT_NAME} src/mmWaveLoader.cpp)
-target_link_libraries(mmwave ${serial_LIBRARIES})
 target_link_libraries(${PROJECT_NAME} ${catkin_LIBRARIES} mmwave ${serial_LIBRARIES})
 add_dependencies(${PROJECT_NAME} ${catkin_EXPORTED_TARGETS} mmwave ${serial_EXPORTED_TARGETS})
 

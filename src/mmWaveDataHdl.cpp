@@ -51,14 +51,14 @@ void mmWaveDataHdl::onInit()
 {
    ros::NodeHandle private_nh = getPrivateNodeHandle();
    
-   std::string mySerialPort;
-   int myBaudRate;
+   std::string ifname = "can0";
+   int mmwave_can_id = 2; // id 2 for mmwave radar
    int myMaxAllowedElevationAngleDeg;
    int myMaxAllowedAzimuthAngleDeg;
+
+   private_nh.getParam("/mmWave_Manager/ifname", ifname);
    
-   private_nh.getParam("/mmWave_Manager/data_port", mySerialPort);
-   
-   private_nh.getParam("/mmWave_Manager/data_rate", myBaudRate);
+   private_nh.getParam("/mmWave_Manager/mmwave_can_id", mmwave_can_id);
    
    if (!(private_nh.getParam("/mmWave_Manager/max_allowed_elevation_angle_deg", myMaxAllowedElevationAngleDeg)))
    {
@@ -70,14 +70,12 @@ void mmWaveDataHdl::onInit()
       myMaxAllowedAzimuthAngleDeg = 90;  // Use max angle if none specified
    }
 
-   ROS_INFO("mmWaveDataHdl: data_port = %s", mySerialPort.c_str());
-   ROS_INFO("mmWaveDataHdl: data_rate = %d", myBaudRate);
+   ROS_INFO("mmWaveDataHdl: ifname = %s", ifname.c_str());
+   ROS_INFO("mmWaveDataHdl: mmwave_can_id = %d", mmwave_can_id);
    ROS_INFO("mmWaveDataHdl: max_allowed_elevation_angle_deg = %d", myMaxAllowedElevationAngleDeg);
    ROS_INFO("mmWaveDataHdl: max_allowed_azimuth_angle_deg = %d", myMaxAllowedAzimuthAngleDeg);
    
-   DataUARTHandler DataHandler(&private_nh);
-   DataHandler.setUARTPort( (char*) mySerialPort.c_str() );
-   DataHandler.setBaudRate( myBaudRate );
+   DataCANHandler DataHandler(&private_nh, ifname, mmwave_can_id);
    DataHandler.setMaxAllowedElevationAngleDeg( myMaxAllowedElevationAngleDeg );
    DataHandler.setMaxAllowedAzimuthAngleDeg( myMaxAllowedAzimuthAngleDeg );
    DataHandler.start();
