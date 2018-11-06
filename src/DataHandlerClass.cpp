@@ -56,153 +56,383 @@
 #include <pcl/point_types.h>
 #include <cmath>
 
+#define TIMEOUT_READ_CAN 100
 
-DataUARTHandler::DataUARTHandler(ros::NodeHandle* nh) : currentBufp(&pingPongBuffers[0]) , nextBufp(&pingPongBuffers[1]) 
+DataCANHandler::DataCANHandler(ros::NodeHandle* nh, std::string ifname, int mmwave_can_id) :
+	CanSocket(ifname, mmwave_can_id), currentBufp(&pingPongBuffers[0]), nextBufp(&pingPongBuffers[1])
 {
     nodeHandle = nh;
-    DataUARTHandler_pub = nodeHandle->advertise< sensor_msgs::PointCloud2 >("RScan", 100);
+    DataCANHandler_pub = nodeHandle->advertise< sensor_msgs::PointCloud2 >("RScan", 100);
     maxAllowedElevationAngleDeg = 90; // Use max angle if none specified
     maxAllowedAzimuthAngleDeg = 90; // Use max angle if none specified
 }
 
-/*Implementation of setUARTPort*/
-void DataUARTHandler::setUARTPort(char* mySerialPort)
-{
-    dataSerialPort = mySerialPort;
-}
-
-/*Implementation of setBaudRate*/
-void DataUARTHandler::setBaudRate(int myBaudRate)
-{
-    dataBaudRate = myBaudRate;
-}
-
 /*Implementation of setMaxAllowedElevationAngleDeg*/
-void DataUARTHandler::setMaxAllowedElevationAngleDeg(int myMaxAllowedElevationAngleDeg)
+void DataCANHandler::setMaxAllowedElevationAngleDeg(int myMaxAllowedElevationAngleDeg)
 {
     maxAllowedElevationAngleDeg = myMaxAllowedElevationAngleDeg;
 }
 
 /*Implementation of setMaxAllowedAzimuthAngleDeg*/
-void DataUARTHandler::setMaxAllowedAzimuthAngleDeg(int myMaxAllowedAzimuthAngleDeg)
+void DataCANHandler::setMaxAllowedAzimuthAngleDeg(int myMaxAllowedAzimuthAngleDeg)
 {
     maxAllowedAzimuthAngleDeg = myMaxAllowedAzimuthAngleDeg;
 }
 
 /*Implementation of readIncomingData*/
-void *DataUARTHandler::readIncomingData(void)
+void *DataCANHandler::readIncomingData(void)
 {
-    
     int firstPacketReady = 0;
     uint8_t last8Bytes[8] = {0};
+    struct can_frame frame;
+    MmwDemo_Output_TLV_Types tlvType = MMWDEMO_OUTPUT_MSG_NULL;
+    uint32_t tlvLen = 0;
+    int msg_tl_points = 1;
+    int msg_tl_range = 1;
+    int msg_tl_noise = 1;
+    int msg_tl_stats = 1;
+    int count_c1 = 1;
+    int count_d1 = 0;
+    int count_d2 = 0;
+    int count_d3 = 0;
+    int count_d6 = 0;
+    int count_b1 = 0;
     
-    /*Open UART Port and error checking*/
-    serial::Serial mySerialObject("", dataBaudRate, serial::Timeout::simpleTimeout(100));
-    mySerialObject.setPort(dataSerialPort);
-    try
-    {
-        mySerialObject.open();
-    } catch (std::exception &e1) {
-        ROS_INFO("DataUARTHandler Read Thread: Failed to open Data serial port with error: %s", e1.what());
-        ROS_INFO("DataUARTHandler Read Thread: Waiting 20 seconds before trying again...");
-        try
-        {
-            // Wait 20 seconds and try to open serial port again
-            ros::Duration(20).sleep();
-            mySerialObject.open();
-        } catch (std::exception &e2) {
-            ROS_ERROR("DataUARTHandler Read Thread: Failed second time to open Data serial port, error: %s", e1.what());
-            ROS_ERROR("DataUARTHandler Read Thread: Port could not be opened. Port is \"%s\" and baud rate is %d", dataSerialPort, dataBaudRate);
-            pthread_exit(NULL);
-        }
-    }
-    
-    if(mySerialObject.isOpen())
-        ROS_INFO("DataUARTHandler Read Thread: Port is open");
-    else
-        ROS_ERROR("DataUARTHandler Read Thread: Port could not be opened");
-    
-    /*Quick magicWord check to synchronize program with data Stream*/
-    while(!isMagicWord(last8Bytes))
-    {
+    /*Read CAN frame*/
+    if( readCAN(&frame) < 0 )
+	{
+		ROS_INFO("Failed to read CAN bus.");
 
-        last8Bytes[0] = last8Bytes[1];
-        last8Bytes[1] = last8Bytes[2];
-        last8Bytes[2] = last8Bytes[3];
-        last8Bytes[3] = last8Bytes[4];
-        last8Bytes[4] = last8Bytes[5];
-        last8Bytes[5] = last8Bytes[6];
-        last8Bytes[6] = last8Bytes[7];
-        mySerialObject.read(&last8Bytes[7], 1);
-        
-    }
-    
+		return NULL;
+	}
+	
+    /*Check if the frame contains magic numbers*/
+	if (frame.can_dlc == 8)
+		for (int i = 0; i < 8; i++)
+			last8Bytes[i] = frame.data[i];
+			
+    //ROS_INFO("Read one frame from CAN bus the first time.");
+	//ROS_INFO_STREAM("CAN ID: 0x" << std::hex << frame.can_id);
+	//ROS_INFO_STREAM("Data length: " << (int)frame.can_dlc);
+	//for (int i = 0; i < frame.can_dlc; i++)
+	//{
+	//	ROS_INFO_STREAM("data[" << i << "]: 0x" << std::hex << (int)frame.data[i]);
+	//}
+
+	// Check if it is a radar CAN frame
+	// Look for frame contains magic numbers
+	while (!isMagicWord(last8Bytes))
+	{
+		/*Read CAN frame*/
+		if( readCAN(&frame) < 0 )
+		{
+			ROS_INFO("Failed to read CAN bus.");
+
+			return NULL;
+		}
+
+	    /*Check if the frame contains magic numbers*/
+		if (frame.can_dlc == 8)
+			for (int i = 0; i < 8; i++)
+				last8Bytes[i] = frame.data[i];
+	}
+	//ROS_INFO("Read one frame from CAN bus; got magic frame.");
+	//ROS_INFO_STREAM("CAN ID: 0x" << std::hex << frame.can_id);
+	//ROS_INFO_STREAM("Data length: " << (int)frame.can_dlc);
+	//for (int i = 0; i < frame.can_dlc; i++)
+	//{
+	//	ROS_INFO_STREAM("data[" << i << "]: 0x" << std::hex << (int)frame.data[i]);
+	//}
+
     /*Lock nextBufp before entering main loop*/
     pthread_mutex_lock(&nextBufp_mutex);
     
+	/*print the buffer
+	ROS_INFO("Size of buffer: %ld", (*nextBufp).size());
+	for(auto i: *nextBufp)
+	{
+		std::cout << std::hex << (int)i << " " << std::dec;
+	}
+	std::cout << "\n";*/
+
     while(ros::ok())
     {
-        /*Start reading UART data and writing to buffer while also checking for magicWord*/
-        last8Bytes[0] = last8Bytes[1];
-        last8Bytes[1] = last8Bytes[2];
-        last8Bytes[2] = last8Bytes[3];
-        last8Bytes[3] = last8Bytes[4];
-        last8Bytes[4] = last8Bytes[5];
-        last8Bytes[5] = last8Bytes[6];
-        last8Bytes[6] = last8Bytes[7];
-        mySerialObject.read(&last8Bytes[7], 1);
-        
-        nextBufp->push_back( last8Bytes[7] );  //push byte onto buffer
-        
-        //ROS_INFO("DataUARTHandler Read Thread: last8bytes = %02x%02x %02x%02x %02x%02x %02x%02x",  last8Bytes[7], last8Bytes[6], last8Bytes[5], last8Bytes[4], last8Bytes[3], last8Bytes[2], last8Bytes[1], last8Bytes[0]);
-        
-        /*If a magicWord is found wait for sorting to finish and switch buffers*/
-        if( isMagicWord(last8Bytes) )
-        {
-            //ROS_INFO("Found magic word");
-        
-            /*Lock countSync Mutex while unlocking nextBufp so that the swap thread can use it*/
-            pthread_mutex_lock(&countSync_mutex);
-            pthread_mutex_unlock(&nextBufp_mutex);
-            
-            /*increment countSync*/
-            countSync++;
-            
-            /*If this is the first packet to be found, increment countSync again since Sort thread is not reading data yet*/
-            if(firstPacketReady == 0)
-            {
-                countSync++;
-                firstPacketReady = 1;
-            }
-            
-            /*Signal Swap Thread to run if countSync has reached its max value*/
-            if(countSync == COUNT_SYNC_MAX)
-            {
-                pthread_cond_signal(&countSync_max_cv);
-            }
-            
-            /*Wait for the Swap thread to finish swapping pointers and signal us to continue*/
-            pthread_cond_wait(&read_go_cv, &countSync_mutex);
-            
-            /*Unlock countSync so that Swap Thread can use it*/
-            pthread_mutex_unlock(&countSync_mutex);
-            pthread_mutex_lock(&nextBufp_mutex);
-            
-            nextBufp->clear();
-            memset(last8Bytes, 0, sizeof(last8Bytes));
-              
-        }
-      
+    	/*Read CAN frame*/
+		if( readCAN(&frame) < 0 )
+		{
+			ROS_INFO("Failed to read CAN bus.");
+
+			return NULL;
+		}
+		//ROS_INFO("Read one frame from CAN bus.");
+		//ROS_INFO_STREAM("CAN ID: 0x" << std::hex << frame.can_id);
+		//ROS_INFO_STREAM("Data length: " << (int)frame.can_dlc);
+		//for (int i = 0; i < frame.can_dlc; i++)
+		//{
+		//	ROS_INFO_STREAM("data[" << i << "]: 0x" << std::hex << (int)frame.data[i]);
+		//}
+
+		switch((frame.can_id & 0x000007FFU))
+		{
+			case 0xC1:
+				//ROS_INFO("Number of frame 0xC1: %d", ++count_c1);
+				if (frame.can_dlc == 8)
+					for (int i = 0; i < 8; i++)
+						last8Bytes[i] = frame.data[i];
+					
+			    //push the frame into the buffer
+			    for(int i = 0; i < frame.can_dlc; i++)
+			    {
+			    	nextBufp->push_back( frame.data[i] );  //push bytes onto buffer
+			    }
+				    
+			    if(isMagicWord(last8Bytes))
+			    {
+			    	//ROS_INFO("Found magic word");
+
+					/*Lock countSync Mutex while unlocking nextBufp so that the swap thread can use it*/
+					pthread_mutex_lock(&countSync_mutex);
+					pthread_mutex_unlock(&nextBufp_mutex);
+
+					/*increment countSync*/
+					countSync++;
+
+					/*If this is the first packet to be found, increment countSync again since Sort thread is not reading data yet*/
+					if(firstPacketReady == 0)
+					{
+						countSync++;
+						firstPacketReady = 1;
+					}
+
+					/*Signal Swap Thread to run if countSync has reached its max value*/
+					if(countSync == COUNT_SYNC_MAX)
+					{
+						pthread_cond_signal(&countSync_max_cv);
+					}
+
+					/*Wait for the Swap thread to finish swapping pointers and signal us to continue*/
+					pthread_cond_wait(&read_go_cv, &countSync_mutex);
+
+					/*Unlock countSync so that Swap Thread can use it*/
+					pthread_mutex_unlock(&countSync_mutex);
+					pthread_mutex_lock(&nextBufp_mutex);
+
+					//print the buffer
+					//ROS_INFO("Size of buffer: %ld", (*nextBufp).size());
+					//for(auto i: *nextBufp)
+					//{
+					//	std::cout << std::hex << (int)i << " ";
+					//}
+					//std::cout << std::dec << "\n";
+
+					nextBufp->clear();
+					memset(last8Bytes, 0, sizeof(last8Bytes));
+			    }
+
+				break;
+			case 0xD1:
+				//ROS_INFO("Number of frame 0xD1: %d", ++count_d1);
+				if(msg_tl_points)
+				{
+					tlvType = (MmwDemo_Output_TLV_Types)((frame.data[3] << 24) + (frame.data[2] << 16) + (frame.data[1] << 8) + frame.data[0]);
+					tlvLen = ((frame.data[7] << 24) + (frame.data[6] << 16) + (frame.data[5] << 8) + frame.data[4]);
+					//std::cout << "tlvType: " << tlvType << "; tlvLen: 0x" << std::hex << tlvLen << std::dec << "\n";
+					
+					for(int i = 0; i < 8; i++)
+					{
+						nextBufp->push_back( frame.data[i] );
+					}
+
+					msg_tl_points = 0;
+				}
+				else
+				{
+					if (tlvLen > 64)
+					{
+						for(int i = 0; i < 64; i++)
+						{
+							nextBufp->push_back( frame.data[i] );
+						}
+
+						tlvLen -= 64;
+					}
+					else
+					{
+						for(int i = 0; i < tlvLen; i++)
+						{
+							nextBufp->push_back( frame.data[i] );
+						}
+
+						msg_tl_points = 1;					
+
+						//print the buffer
+						//ROS_INFO("Size of buffer: %ld", (*nextBufp).size());
+						//for(auto i: *nextBufp)
+						//{
+						//	std::cout << std::hex << (int)i << " ";
+						//}
+						//std::cout << std::dec << "\n";
+					}
+				}
+				
+				break;
+			case 0xD2:
+				//ROS_INFO("Number of frame 0xD2: %d", ++count_d2);
+				if(msg_tl_range)
+				{
+					tlvType = (MmwDemo_Output_TLV_Types)((frame.data[3] << 24) + (frame.data[2] << 16) + (frame.data[1] << 8) + frame.data[0]);
+					tlvLen = ((frame.data[7] << 24) + (frame.data[6] << 16) + (frame.data[5] << 8) + frame.data[4]);
+					//std::cout << "tlvType: " << tlvType << "; tlvLen: 0x" << std::hex << tlvLen << std::dec << "\n";
+					
+					for(int i = 0; i < 8; i++)
+					{
+						nextBufp->push_back( frame.data[i] );
+					}
+
+					msg_tl_range = 0;
+				}
+				else
+				{
+					if (tlvLen > 64)
+					{
+						for(int i = 0; i < 64; i++)
+						{
+							nextBufp->push_back( frame.data[i] );
+						}
+
+						tlvLen -= 64;
+					}
+					else
+					{
+						for(int i = 0; i < tlvLen; i++)
+						{
+							nextBufp->push_back( frame.data[i] );
+						}
+
+						msg_tl_range = 1;					
+
+						//print the buffer
+						//ROS_INFO("Size of buffer: %ld", (*nextBufp).size());
+						//for(auto i: *nextBufp)
+						//{
+						//	std::cout << std::hex << (int)i << " ";
+						//}
+						//std::cout << std::dec << "\n";
+					}
+				}
+
+				break;
+			case 0xD3:
+				//ROS_INFO("Number of frame 0xD3: %d", ++count_d3);
+				if(msg_tl_noise)
+				{
+					tlvType = (MmwDemo_Output_TLV_Types)((frame.data[3] << 24) + (frame.data[2] << 16) + (frame.data[1] << 8) + frame.data[0]);
+					tlvLen = ((frame.data[7] << 24) + (frame.data[6] << 16) + (frame.data[5] << 8) + frame.data[4]);
+					//std::cout << "tlvType: " << tlvType << "; tlvLen: 0x" << std::hex << tlvLen << std::dec << "\n";
+					
+					for(int i = 0; i < 8; i++)
+					{
+						nextBufp->push_back( frame.data[i] );
+					}
+
+					msg_tl_noise = 0;
+				}
+				else
+				{
+					if (tlvLen > 64)
+					{
+						for(int i = 0; i < 64; i++)
+						{
+							nextBufp->push_back( frame.data[i] );
+						}
+
+						tlvLen -= 64;
+					}
+					else
+					{
+						for(int i = 0; i < tlvLen; i++)
+						{
+							nextBufp->push_back( frame.data[i] );
+						}
+
+						msg_tl_noise = 1;					
+
+						//print the buffer
+						//ROS_INFO("Size of buffer: %ld", (*nextBufp).size());
+						//for(auto i: *nextBufp)
+						//{
+						//	std::cout << std::hex << (int)i << " ";
+						//}
+						//std::cout << std::dec << "\n";
+					}
+				}
+
+				break;
+			case 0xD6:
+				//ROS_INFO("Number of frame 0xD6: %d", ++count_d6);
+				if(msg_tl_stats)
+				{
+					tlvType = (MmwDemo_Output_TLV_Types)((frame.data[3] << 24) + (frame.data[2] << 16) + (frame.data[1] << 8) + frame.data[0]);
+					tlvLen = ((frame.data[7] << 24) + (frame.data[6] << 16) + (frame.data[5] << 8) + frame.data[4]);
+					//std::cout << "tlvType: " << tlvType << "; tlvLen: 0x" << std::hex << tlvLen << std::dec << "\n";
+					
+					for(int i = 0; i < 8; i++)
+					{
+						nextBufp->push_back( frame.data[i] );
+					}
+
+					msg_tl_stats = 0;
+				}
+				else
+				{
+					if (tlvLen > 64)
+					{
+						for(int i = 0; i < 64; i++)
+						{
+							nextBufp->push_back( frame.data[i] );
+						}
+
+						tlvLen -= 64;
+					}
+					else
+					{
+						for(int i = 0; i < tlvLen; i++)
+						{
+							nextBufp->push_back( frame.data[i] );
+						}
+
+						msg_tl_stats = 1;					
+
+						//print the buffer
+						//ROS_INFO("Size of buffer: %ld", (*nextBufp).size());
+						//for(auto i: *nextBufp)
+						//{
+						//	std::cout << std::hex << (int)i << " ";
+						//}
+						//std::cout << std::dec << "\n";
+					}
+				}
+
+				break;
+			case 0xB1:
+				//ROS_INFO("Number of frame 0xB1: %d", ++count_b1);
+				
+				for(int i = 0; i < (int)frame.can_dlc; i++)
+				{
+					nextBufp->push_back( frame.data[i] );
+				}
+						
+				break;
+			default:
+				break;
+		}
     }
-    
-    
-    mySerialObject.close();
     
     pthread_exit(NULL);
 }
 
 
-int DataUARTHandler::isMagicWord(uint8_t last8Bytes[8])
+int DataCANHandler::isMagicWord(uint8_t last8Bytes[8])
 {
     int val = 0, i = 0, j = 0;
     
@@ -224,7 +454,7 @@ int DataUARTHandler::isMagicWord(uint8_t last8Bytes[8])
     return val;  
 }
 
-void *DataUARTHandler::syncedBufferSwap(void)
+void *DataCANHandler::syncedBufferSwap(void)
 {
     while(ros::ok())
     {
@@ -261,7 +491,7 @@ void *DataUARTHandler::syncedBufferSwap(void)
     
 }
 
-void *DataUARTHandler::sortIncomingData( void )
+void *DataCANHandler::sortIncomingData( void )
 {
     MmwDemo_Output_TLV_Types tlvType = MMWDEMO_OUTPUT_MSG_NULL;
     uint32_t tlvLen = 0;
@@ -289,70 +519,102 @@ void *DataUARTHandler::sortIncomingData( void )
             
         case READ_HEADER:
             
-            //make sure packet has at least first three fields (12 bytes) before we read them (does not include magicWord since it was already removed)
+            /*print the buffer
+			ROS_INFO("Size of buffer: %ld", (*currentBufp).size());
+			for(auto i: *currentBufp)
+			{
+				std::cout << std::hex << (int)i << " ";
+			}
+			std::cout << std::dec << "\n";*/
+			
+            //make sure packet has at least first three fields (12 bytes) before we read them (does not include magicWord since it was already removed)            
             if(currentBufp->size() < 12)
             {
                sorterState = SWAP_BUFFERS;
                break;
             }
             
-            //get version (4 bytes)
-            memcpy( &mmwData.header.version, &currentBufp->at(currentDatap), sizeof(mmwData.header.version));
+            //get version (4 bytes)           
+            memcpy( &mmwData.header.version, &currentBufp->at(currentDatap), sizeof(mmwData.header.version)); 
+			//ROS_INFO("mmwData.header.version: 0x%x", mmwData.header.version);
             currentDatap += ( sizeof(mmwData.header.version) );
             
             //get totalPacketLen (4 bytes)
             memcpy( &mmwData.header.totalPacketLen, &currentBufp->at(currentDatap), sizeof(mmwData.header.totalPacketLen));
+			//ROS_INFO("mmwData.header.totalPacketLen: %d", mmwData.header.totalPacketLen);
             currentDatap += ( sizeof(mmwData.header.totalPacketLen) );
             
             //get platform (4 bytes)
             memcpy( &mmwData.header.platform, &currentBufp->at(currentDatap), sizeof(mmwData.header.platform));
+			//ROS_INFO("mmwData.header.platform: 0x%x", mmwData.header.platform);
             currentDatap += ( sizeof(mmwData.header.platform) );      
             
             //if packet doesn't have correct header size (which is based on platform and SDK version), throw it away (does not include magicWord since it was already removed)
-	    if((((mmwData.header.version >> 24) & 0xFF) < 1) || (((mmwData.header.version >> 16) & 0xFF) < 1))  //check if SDK version is older than 1.1
-	    {
-               //ROS_INFO("mmWave device firmware detected version: 0x%8.8X", mmwData.header.version);
-	       headerSize = 28;
-	    }
-            else if((mmwData.header.platform & 0xFFFF) == 0x1443)
-	    {
-	       headerSize = 28;
-	    }
-	    else  // 1642
-	    {
-	       headerSize = 32;
-	    }
+			if((((mmwData.header.version >> 24) & 0xFF) < 1) || (((mmwData.header.version >> 16) & 0xFF) < 1))  //check if SDK version is older than 1.1
+			{
+		       //ROS_INFO("mmWave device firmware detected version: 0x%8.8X", mmwData.header.version);
+			   headerSize = 28;
+			}
+		        else if((mmwData.header.platform & 0xFFFF) == 0x1443)
+			{
+			   headerSize = 28;
+			}
+			else  // 1642
+			{
+			   headerSize = 32;
+			}
             if(currentBufp->size() < headerSize)
             {
                sorterState = SWAP_BUFFERS;
                break;
             }
+            //ROS_INFO("currentBufp->size(): %ld", currentBufp->size());
+            //ROS_INFO("headerSize: %d", headerSize);
             
             //get frameNumber (4 bytes)
             memcpy( &mmwData.header.frameNumber, &currentBufp->at(currentDatap), sizeof(mmwData.header.frameNumber));
+			//ROS_INFO("mmwData.header.frameNumber: 0x%x", mmwData.header.frameNumber);
             currentDatap += ( sizeof(mmwData.header.frameNumber) );
             
             //get timeCpuCycles (4 bytes)
             memcpy( &mmwData.header.timeCpuCycles, &currentBufp->at(currentDatap), sizeof(mmwData.header.timeCpuCycles));
+			//ROS_INFO("mmwData.header.timeCpuCycles: 0x%x", mmwData.header.timeCpuCycles);
             currentDatap += ( sizeof(mmwData.header.timeCpuCycles) );
             
             //get numDetectedObj (4 bytes)
             memcpy( &mmwData.header.numDetectedObj, &currentBufp->at(currentDatap), sizeof(mmwData.header.numDetectedObj));
+			//ROS_INFO("mmwData.header.numDetectedObj: %d", mmwData.header.numDetectedObj);
             currentDatap += ( sizeof(mmwData.header.numDetectedObj) );
             
             //get numTLVs (4 bytes)
             memcpy( &mmwData.header.numTLVs, &currentBufp->at(currentDatap), sizeof(mmwData.header.numTLVs));
+			//ROS_INFO("mmwData.header.numTLVs: %d", mmwData.header.numTLVs);
             currentDatap += ( sizeof(mmwData.header.numTLVs) );
             
             //get subFrameNumber (4 bytes) (not used for XWR1443)
             if((mmwData.header.platform & 0xFFFF) != 0x1443)
-	    {
+	    	{
                memcpy( &mmwData.header.subFrameNumber, &currentBufp->at(currentDatap), sizeof(mmwData.header.subFrameNumber));
+			   //ROS_INFO("mmwData.header.subFrameNumber: 0x%x", mmwData.header.subFrameNumber);
                currentDatap += ( sizeof(mmwData.header.subFrameNumber) );
-	    }
+	    	}
 
             //if packet lengths do not patch, throw it away
+            //ROS_INFO("mmwData.header.totalPacketLen: %d", mmwData.header.totalPacketLen);
+            //ROS_INFO("(48-8-8+8*4+mmwData.header.numDetectedObj*12+4+2*64*8+24): %d", (48-8-8+8*4+mmwData.header.numDetectedObj*12+4+2*64*8+24));
+            //ROS_INFO("currentBufp->size(): %ld", currentBufp->size());
             if(mmwData.header.totalPacketLen == currentBufp->size() )
+            //On CAN bus the packet length seems always not equal to the size of data passed in one packet.
+            //This is because of the padding, go back to the original code, with revision of the code to get the packet.
+            //if( (48-8-8+8*4+mmwData.header.numDetectedObj*12+4+2*64*8+24) == currentBufp->size() ) 
+            //48: header size
+            //8: magic number
+            //8: padding of header
+            //8*4: D1/D2/D3/D6 tl (type & length)
+            //mmwData.header.numDetectedObj*12: each object is 12 bytes
+            //4: the first two 16 bits are id and number of objects
+            //2*64*8: D2 and D3 are 8 frames of 64 bytes
+            //24: length of D6
             {
                sorterState = CHECK_TLV_TYPE;
             }
@@ -361,7 +623,7 @@ void *DataUARTHandler::sortIncomingData( void )
             break;
             
         case READ_OBJ_STRUCT:
-            
+            //ROS_INFO("READ_OBJ_STRUCT");
             i = 0;
             offset = 0;
             
@@ -484,9 +746,9 @@ void *DataUARTHandler::sortIncomingData( void )
             RScan->points.resize(RScan->width * RScan->height);
             
             //ROS_INFO("mmwData.numObjOut after = %d", mmwData.numObjOut);
-            //ROS_INFO("DataUARTHandler Sort Thread: number of obj = %d", mmwData.numObjOut );
+            //ROS_INFO("DataCANHandler Sort Thread: number of obj = %d", mmwData.numObjOut );
             
-            DataUARTHandler_pub.publish(RScan);
+            DataCANHandler_pub.publish(RScan);
             
             sorterState = CHECK_TLV_TYPE;
             
@@ -499,7 +761,7 @@ void *DataUARTHandler::sortIncomingData( void )
             
               while (i++ < tlvLen - 1)
               {
-                     //ROS_INFO("DataUARTHandler Sort Thread : Parsing Range Profile i=%d and tlvLen = %u", i, tlvLen);
+                     //ROS_INFO("DataCANHandler Sort Thread : Parsing Range Profile i=%d and tlvLen = %u", i, tlvLen);
               }
             
               currentDatap += tlvLen;
@@ -516,7 +778,7 @@ void *DataUARTHandler::sortIncomingData( void )
             
               while (i++ < tlvLen - 1)
               {
-                     //ROS_INFO("DataUARTHandler Sort Thread : Parsing Noise Profile i=%d and tlvLen = %u", i, tlvLen);
+                     //ROS_INFO("DataCANHandler Sort Thread : Parsing Noise Profile i=%d and tlvLen = %u", i, tlvLen);
               }
             
               currentDatap += tlvLen;
@@ -533,7 +795,7 @@ void *DataUARTHandler::sortIncomingData( void )
             
               while (i++ < tlvLen - 1)
               {
-                     //ROS_INFO("DataUARTHandler Sort Thread : Parsing Azimuth Profile i=%d and tlvLen = %u", i, tlvLen);
+                     //ROS_INFO("DataCANHandler Sort Thread : Parsing Azimuth Profile i=%d and tlvLen = %u", i, tlvLen);
               }
             
               currentDatap += tlvLen;
@@ -550,7 +812,7 @@ void *DataUARTHandler::sortIncomingData( void )
             
               while (i++ < tlvLen - 1)
               {
-                     //ROS_INFO("DataUARTHandler Sort Thread : Parsing Doppler Profile i=%d and tlvLen = %u", i, tlvLen);
+                     //ROS_INFO("DataCANHandler Sort Thread : Parsing Doppler Profile i=%d and tlvLen = %u", i, tlvLen);
               }
             
               currentDatap += tlvLen;
@@ -567,7 +829,7 @@ void *DataUARTHandler::sortIncomingData( void )
             
               while (i++ < tlvLen - 1)
               {
-                     //ROS_INFO("DataUARTHandler Sort Thread : Parsing Stats Profile i=%d and tlvLen = %u", i, tlvLen);
+                     //ROS_INFO("DataCANHandler Sort Thread : Parsing Stats Profile i=%d and tlvLen = %u", i, tlvLen);
               }
             
               currentDatap += tlvLen;
@@ -579,11 +841,11 @@ void *DataUARTHandler::sortIncomingData( void )
         
         case CHECK_TLV_TYPE:
         
-            //ROS_INFO("DataUARTHandler Sort Thread : tlvCount = %d, numTLV = %d", tlvCount, mmwData.header.numTLVs);
+            //ROS_INFO("DataCANHandler Sort Thread : tlvCount = %d, numTLV = %d", tlvCount, mmwData.header.numTLVs);
         
             if(tlvCount++ >= mmwData.header.numTLVs)
             {
-                //ROS_INFO("DataUARTHandler Sort Thread : CHECK_TLV_TYPE state says tlvCount max was reached, going to switch buffer state");
+                //ROS_INFO("DataCANHandler Sort Thread : CHECK_TLV_TYPE state says tlvCount max was reached, going to switch buffer state");
                 sorterState = SWAP_BUFFERS;
             }
             else
@@ -592,15 +854,15 @@ void *DataUARTHandler::sortIncomingData( void )
                 memcpy( &tlvType, &currentBufp->at(currentDatap), sizeof(tlvType));
                 currentDatap += ( sizeof(tlvType) );
                 
-                //ROS_INFO("DataUARTHandler Sort Thread : sizeof(tlvType) = %d", sizeof(tlvType));
+                //ROS_INFO("DataCANHandler Sort Thread : sizeof(tlvType) = %d", sizeof(tlvType));
             
                 //get tlvLen (32 bits) & remove from queue
                 memcpy( &tlvLen, &currentBufp->at(currentDatap), sizeof(tlvLen));
                 currentDatap += ( sizeof(tlvLen) );
                 
-                //ROS_INFO("DataUARTHandler Sort Thread : sizeof(tlvLen) = %d", sizeof(tlvLen));
+                //ROS_INFO("DataCANHandler Sort Thread : sizeof(tlvLen) = %d", sizeof(tlvLen));
                 
-                //ROS_INFO("DataUARTHandler Sort Thread : tlvType = %d, tlvLen = %d", (int) tlvType, tlvLen);
+                //ROS_INFO("DataCANHandler Sort Thread : tlvType = %d, tlvLen = %d", (int) tlvType, tlvLen);
             
                 switch(tlvType)
                 {
@@ -609,37 +871,37 @@ void *DataUARTHandler::sortIncomingData( void )
                     break;
                 
                 case MMWDEMO_OUTPUT_MSG_DETECTED_POINTS:
-                    //ROS_INFO("DataUARTHandler Sort Thread : Object TLV");
+                    //ROS_INFO("DataCANHandler Sort Thread : Object TLV");
                     sorterState = READ_OBJ_STRUCT;
                     break;
                 
                 case MMWDEMO_OUTPUT_MSG_RANGE_PROFILE:
-                    //ROS_INFO("DataUARTHandler Sort Thread : Range TLV");
+                    //ROS_INFO("DataCANHandler Sort Thread : Range TLV");
                     sorterState = READ_LOG_MAG_RANGE;
                     break;
                 
                 case MMWDEMO_OUTPUT_MSG_NOISE_PROFILE:
-                    //ROS_INFO("DataUARTHandler Sort Thread : Noise TLV");
+                    //ROS_INFO("DataCANHandler Sort Thread : Noise TLV");
                     sorterState = READ_NOISE;
                     break;
                 
                 case MMWDEMO_OUTPUT_MSG_AZIMUTH_STATIC_HEAT_MAP:
-                    //ROS_INFO("DataUARTHandler Sort Thread : Azimuth Heat TLV");
+                    //ROS_INFO("DataCANHandler Sort Thread : Azimuth Heat TLV");
                     sorterState = READ_AZIMUTH;
                     break;
                 
                 case MMWDEMO_OUTPUT_MSG_RANGE_DOPPLER_HEAT_MAP:
-                    //ROS_INFO("DataUARTHandler Sort Thread : R/D Heat TLV");
+                    //ROS_INFO("DataCANHandler Sort Thread : R/D Heat TLV");
                     sorterState = READ_DOPPLER;
                     break;
                 
                 case MMWDEMO_OUTPUT_MSG_STATS:
-                    //ROS_INFO("DataUARTHandler Sort Thread : Stats TLV");
+                    //ROS_INFO("DataCANHandler Sort Thread : Stats TLV");
                     sorterState = READ_STATS;
                     break;
                 
                 case MMWDEMO_OUTPUT_MSG_MAX:
-                    //ROS_INFO("DataUARTHandler Sort Thread : Header TLV");
+                    //ROS_INFO("DataCANHandler Sort Thread : Header TLV");
                     sorterState = READ_HEADER;
                     break;
                 
@@ -682,7 +944,7 @@ void *DataUARTHandler::sortIncomingData( void )
     pthread_exit(NULL);
 }
 
-void DataUARTHandler::start(void)
+void DataCANHandler::start(void)
 {
     
     pthread_t uartThread, sorterThread, swapThread;
@@ -723,11 +985,11 @@ void DataUARTHandler::start(void)
     ros::spin();
 
     pthread_join(iret1, NULL);
-    ROS_INFO("DataUARTHandler Read Thread joined");
+    ROS_INFO("DataCANHandler Read Thread joined");
     pthread_join(iret2, NULL);
-    ROS_INFO("DataUARTHandler Sort Thread joined");
+    ROS_INFO("DataCANHandler Sort Thread joined");
     pthread_join(iret3, NULL);
-    ROS_INFO("DataUARTHandler Swap Thread joined");
+    ROS_INFO("DataCANHandler Swap Thread joined");
     
     pthread_mutex_destroy(&countSync_mutex);
     pthread_mutex_destroy(&nextBufp_mutex);
@@ -739,17 +1001,17 @@ void DataUARTHandler::start(void)
     
 }
 
-void* DataUARTHandler::readIncomingData_helper(void *context)
+void* DataCANHandler::readIncomingData_helper(void *context)
 {  
-    return (static_cast<DataUARTHandler*>(context)->readIncomingData());
+    return (static_cast<DataCANHandler*>(context)->readIncomingData());
 }
 
-void* DataUARTHandler::sortIncomingData_helper(void *context)
+void* DataCANHandler::sortIncomingData_helper(void *context)
 {  
-    return (static_cast<DataUARTHandler*>(context)->sortIncomingData());
+    return (static_cast<DataCANHandler*>(context)->sortIncomingData());
 }
 
-void* DataUARTHandler::syncedBufferSwap_helper(void *context)
+void* DataCANHandler::syncedBufferSwap_helper(void *context)
 {  
-    return (static_cast<DataUARTHandler*>(context)->syncedBufferSwap());
+    return (static_cast<DataCANHandler*>(context)->syncedBufferSwap());
 }
